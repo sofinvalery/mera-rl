@@ -1,0 +1,26 @@
+max_steps = 200
+
+[model]
+name = "Qwen/Qwen3-4B-Thinking-2507"
+seq_len = 4096
+trust_remote_code = true
+
+[model.lora]
+rank = 16
+alpha = 32
+dropout = 0.05
+target_modules = [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj"
+]
+
+[optim]
+lr = 1e-5
+weight_decay = 0.0
+
+[ckpt]

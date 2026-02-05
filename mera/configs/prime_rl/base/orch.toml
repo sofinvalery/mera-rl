@@ -1,0 +1,17 @@
+max_steps = 200
+batch_size = 32
+rollouts_per_example = 4
+seq_len = 4096
+
+[model]
+name = "Qwen/Qwen3-4B-Thinking-2507"
+
+[model.lora]
+rank = 16
+alpha = 32
+
+[sampling]
+max_tokens = 256
+
+[buffer]
+online_difficulty_filtering = true

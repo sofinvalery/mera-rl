@@ -9,3 +9,8 @@ wheels/
 .hf
 # Virtual environments
 .venv
+
+# Local run artifacts
+outputs/
+wandb/
+env.sh

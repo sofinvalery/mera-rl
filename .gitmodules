@@ -1,0 +1,6 @@
+[submodule "_deps/MERA"]
+	path = _deps/MERA
+	url = https://github.com/MERA-Evaluation/MERA.git
+[submodule "_deps/prime-rl"]
+	path = _deps/prime-rl
+	url = https://github.com/PrimeIntellect-ai/prime-rl.git

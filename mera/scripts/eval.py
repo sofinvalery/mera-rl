@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 import re
 import shutil
 import sys
@@ -286,10 +287,13 @@ def main() -> None:
     if args.wandb:
         import wandb
 
+        project = args.wandb_project or os.getenv("WANDB_PROJECT")
+        entity = args.wandb_entity or os.getenv("WANDB_ENTITY")
+        run_name = args.wandb_run_name or os.getenv("WANDB_RUN_NAME")
         wandb_run = wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=args.wandb_run_name,
+            project=project,
+            entity=entity,
+            name=run_name,
             config=vars(args),
         )
 
@@ -319,6 +323,10 @@ def main() -> None:
     zip_path = build_submission_files(output_dir, args.split, task_outputs)
     if args.skip_scoring:
         print(f"Skipping scoring. Submission at {zip_path}")
+        if wandb_run is not None:
+            wandb_run.summary["eval/skipped_scoring"] = 1
+            wandb_run.summary["eval/submission_zip"] = str(zip_path)
+            wandb_run.finish()
         return
     results_path = (output_dir / "submission_results.json").resolve()
     results_path.parent.mkdir(parents=True, exist_ok=True)

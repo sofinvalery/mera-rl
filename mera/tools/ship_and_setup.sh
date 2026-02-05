@@ -18,6 +18,8 @@ Options:
   --wandb-project NAME   WANDB_PROJECT value to write into env.sh
   --wandb-entity NAME    WANDB_ENTITY value to write into env.sh
   --wandb-run-group NAME WANDB_RUN_GROUP value to write into env.sh
+  --prime-rl-repo-url URL Prime-RL repo URL (default: https://github.com/PrimeIntellect-ai/prime-rl.git)
+  --prime-rl-dir DIR      Prime-RL install directory on remote
   --keep-remote-bundle   Keep bundle on remote after extraction
 EOF
 }
@@ -32,6 +34,8 @@ DATA_DIR=""
 WANDB_PROJECT=""
 WANDB_ENTITY=""
 WANDB_RUN_GROUP=""
+PRIME_RL_REPO_URL=""
+PRIME_RL_DIR=""
 KEEP_REMOTE_BUNDLE="false"
 
 while [[ $# -gt 0 ]]; do
@@ -76,6 +80,14 @@ while [[ $# -gt 0 ]]; do
       WANDB_RUN_GROUP="$2"
       shift 2
       ;;
+    --prime-rl-repo-url)
+      PRIME_RL_REPO_URL="$2"
+      shift 2
+      ;;
+    --prime-rl-dir)
+      PRIME_RL_DIR="$2"
+      shift 2
+      ;;
     --keep-remote-bundle)
       KEEP_REMOTE_BUNDLE="true"
       shift 1
@@ -103,7 +115,15 @@ BUNDLE_PATH="$(mktemp -t mera_bundle.XXXXXX.tgz)"
 REMOTE_BUNDLE="/tmp/mera_bundle.tgz"
 REMOTE_SETUP="/tmp/mera_remote_setup.sh"
 
-tar -czf "$BUNDLE_PATH" -C "$REPO_ROOT" mera
+BUNDLE_ITEMS=("mera")
+if [[ -f "$REPO_ROOT/pyproject.toml" ]]; then
+  BUNDLE_ITEMS+=("pyproject.toml")
+fi
+if [[ -f "$REPO_ROOT/uv.lock" ]]; then
+  BUNDLE_ITEMS+=("uv.lock")
+fi
+
+tar -czf "$BUNDLE_PATH" -C "$REPO_ROOT" "${BUNDLE_ITEMS[@]}"
 
 SCP_ARGS=("-P" "$PORT")
 SSH_ARGS=("-p" "$PORT")
@@ -137,6 +157,12 @@ if [[ -n "$WANDB_ENTITY" ]]; then
 fi
 if [[ -n "$WANDB_RUN_GROUP" ]]; then
   REMOTE_CMD+=("--wandb-run-group" "$WANDB_RUN_GROUP")
+fi
+if [[ -n "$PRIME_RL_REPO_URL" ]]; then
+  REMOTE_CMD+=("--prime-rl-repo-url" "$PRIME_RL_REPO_URL")
+fi
+if [[ -n "$PRIME_RL_DIR" ]]; then
+  REMOTE_CMD+=("--prime-rl-dir" "$PRIME_RL_DIR")
 fi
 if [[ "$KEEP_REMOTE_BUNDLE" == "true" ]]; then
   REMOTE_CMD+=("--keep-bundle")

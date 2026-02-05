@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
+
 import argparse
 import subprocess
 import sys

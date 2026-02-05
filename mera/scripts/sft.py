@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import os
+os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 from typing import Any, Dict, List
+
+from collections import Counter
 
 import sys
 
 import torch
 from datasets import Dataset
 from peft import LoraConfig
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
-from trl import SFTTrainer
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from trl import SFTTrainer, SFTConfig
 from tqdm import tqdm
 
 env_root = Path(__file__).resolve().parents[1] / "environments"
@@ -124,10 +128,13 @@ def main() -> None:
     if args.wandb:
         import wandb
 
+        project = args.wandb_project or os.getenv("WANDB_PROJECT")
+        entity = args.wandb_entity or os.getenv("WANDB_ENTITY")
+        run_name = args.wandb_run_name or os.getenv("WANDB_RUN_NAME")
         wandb_run = wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=args.wandb_run_name,
+            project=project,
+            entity=entity,
+            name=run_name,
             config=vars(args),
         )
 
@@ -156,7 +163,13 @@ def main() -> None:
 
     dataset = build_sft_dataset(args.data_dir, tokenizer, args.limit)
 
-    training_args = TrainingArguments(
+    if wandb_run is not None:
+        task_counts = Counter(dataset["task"])
+        wandb_run.summary["dataset/num_examples"] = len(dataset)
+        for task, count in task_counts.items():
+            wandb_run.summary[f"dataset/tasks/{task}"] = count
+
+    training_args = SFTConfig(
         output_dir=str(output_dir),
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
@@ -168,15 +181,15 @@ def main() -> None:
         save_steps=500,
         save_total_limit=2,
         report_to=["wandb"] if args.wandb else [],
+        dataset_text_field="text",
+        max_length=args.max_seq_len,
     )
 
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
-        train_dataset=dataset,
-        dataset_text_field="text",
-        max_seq_length=args.max_seq_len,
         args=training_args,
+        train_dataset=dataset,
+        processing_class=tokenizer,
         peft_config=peft_config,
     )
     trainer.train()

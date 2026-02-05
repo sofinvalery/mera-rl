@@ -2,71 +2,63 @@
 set -euo pipefail
 
 usage() {
-  cat <<'EOF'
-Usage: remote_setup.sh --bundle /tmp/mera_bundle.tgz [options]
-
-Required:
-  --bundle PATH           Path to the tarball transferred via scp.
+  cat <<'USAGE'
+Usage: remote_setup.sh [--repo-dir /path/to/repo] [options]
 
 Options:
-  --target DIR            Target install directory (default: ~/mera)
+  --repo-dir DIR          Repo root (default: inferred from script location)
   --torch-index-url URL   PyTorch wheel index URL (default: https://download.pytorch.org/whl/cu124)
+  --torch-version VER     PyTorch version (default: 2.6.0+cu124)
+  --python VER            Python version for the main venv (default: 3.11)
+  --prime-rl-python VER   Python version for prime-rl venv (default: 3.12)
   --mera-repo-url URL     MERA repo URL (default: https://github.com/MERA-Evaluation/MERA.git)
-  --data-dir DIR          MERA_DATA_DIR value to write into env.sh
-  --wandb-project NAME    WANDB_PROJECT value to write into env.sh
-  --wandb-entity NAME     WANDB_ENTITY value to write into env.sh
-  --wandb-run-group NAME  WANDB_RUN_GROUP value to write into env.sh
-  --keep-bundle           Do not delete bundle after extraction
-EOF
+  --prime-rl-repo-url URL Prime-RL repo URL (default: https://github.com/PrimeIntellect-ai/prime-rl.git)
+  --prime-rl-dir DIR      Prime-RL install directory (default: <repo>/_deps/prime-rl)
+USAGE
 }
 
-BUNDLE=""
-TARGET_DIR="$HOME/mera"
+REPO_DIR=""
 TORCH_INDEX_URL="https://download.pytorch.org/whl/cu124"
+TORCH_VERSION="2.6.0+cu124"
+PYTHON_VERSION="3.11"
+PRIME_RL_PYTHON_VERSION="3.12"
 MERA_REPO_URL="https://github.com/MERA-Evaluation/MERA.git"
-DATA_DIR=""
-WANDB_PROJECT=""
-WANDB_ENTITY=""
-WANDB_RUN_GROUP=""
-KEEP_BUNDLE="false"
+PRIME_RL_REPO_URL="https://github.com/PrimeIntellect-ai/prime-rl.git"
+PRIME_RL_DIR=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --bundle)
-      BUNDLE="$2"
-      shift 2
-      ;;
-    --target)
-      TARGET_DIR="$2"
+    --repo-dir)
+      REPO_DIR="$2"
       shift 2
       ;;
     --torch-index-url)
       TORCH_INDEX_URL="$2"
       shift 2
       ;;
+    --torch-version)
+      TORCH_VERSION="$2"
+      shift 2
+      ;;
+    --python)
+      PYTHON_VERSION="$2"
+      shift 2
+      ;;
+    --prime-rl-python)
+      PRIME_RL_PYTHON_VERSION="$2"
+      shift 2
+      ;;
     --mera-repo-url)
       MERA_REPO_URL="$2"
       shift 2
       ;;
-    --data-dir)
-      DATA_DIR="$2"
+    --prime-rl-repo-url)
+      PRIME_RL_REPO_URL="$2"
       shift 2
       ;;
-    --wandb-project)
-      WANDB_PROJECT="$2"
+    --prime-rl-dir)
+      PRIME_RL_DIR="$2"
       shift 2
-      ;;
-    --wandb-entity)
-      WANDB_ENTITY="$2"
-      shift 2
-      ;;
-    --wandb-run-group)
-      WANDB_RUN_GROUP="$2"
-      shift 2
-      ;;
-    --keep-bundle)
-      KEEP_BUNDLE="true"
-      shift 1
       ;;
     -h|--help)
       usage
@@ -80,15 +72,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$BUNDLE" ]]; then
-  echo "--bundle is required" >&2
-  usage
-  exit 1
+if [[ -z "$REPO_DIR" ]]; then
+  REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fi
-
-if [[ ! -f "$BUNDLE" ]]; then
-  echo "Bundle not found: $BUNDLE" >&2
-  exit 1
+if [[ -z "$PRIME_RL_DIR" ]]; then
+  PRIME_RL_DIR="$REPO_DIR/_deps/prime-rl"
 fi
 
 APT_GET="apt-get"
@@ -98,82 +86,167 @@ fi
 
 DEBIAN_FRONTEND=noninteractive $APT_GET update -y
 DEBIAN_FRONTEND=noninteractive $APT_GET install -y \
-  python3 python3-venv build-essential git curl rsync
+  python3 python3-venv build-essential git curl
 
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
-  export PATH="$HOME/.local/bin:$PATH"
+fi
+export PATH="$HOME/.local/bin:$PATH"
+
+rm -rf /tmp/.tmp* /tmp/uv* /tmp/torchinductor_root
+rm -rf "$HOME/.cache/uv" "$HOME/.cache/pip" "$HOME/.cache/huggingface" "$HOME/.cache/torch"
+
+cd "$REPO_DIR"
+if [[ ! -f "$REPO_DIR/pyproject.toml" ]]; then
+  echo "pyproject.toml not found in $REPO_DIR" >&2
+  exit 1
 fi
 
-mkdir -p "$TARGET_DIR"
-tar -xzf "$BUNDLE" -C "$TARGET_DIR"
+PYTHON_SHORT="$(echo "$PYTHON_VERSION" | cut -d. -f1,2)"
+PYTHON_MAJOR="${PYTHON_SHORT%.*}"
+PYTHON_MINOR="${PYTHON_SHORT#*.}"
+PYTHON_NEXT_MINOR=$((PYTHON_MINOR + 1))
+PYTHON_RANGE=">=${PYTHON_MAJOR}.${PYTHON_MINOR},<${PYTHON_MAJOR}.${PYTHON_NEXT_MINOR}"
 
-if [[ "$KEEP_BUNDLE" != "true" ]]; then
-  rm -f "$BUNDLE"
-fi
+python3 - <<PY
+from pathlib import Path
 
-cd "$TARGET_DIR"
-uv venv .venv --python python3
+path = Path("pyproject.toml")
+lines = path.read_text().splitlines()
+new_line = 'requires-python = "${PYTHON_RANGE}"'
+
+for idx, line in enumerate(lines):
+    if line.strip().startswith("requires-python"):
+        lines[idx] = new_line
+        break
+else:
+    insert_at = None
+    for idx, line in enumerate(lines):
+        if line.strip() == "[project]":
+            insert_at = idx + 1
+            break
+    if insert_at is None:
+        lines.insert(0, "[project]")
+        insert_at = 1
+    lines.insert(insert_at, new_line)
+
+path.write_text("\n".join(lines) + "\n")
+PY
+
+uv python install "$PYTHON_VERSION"
+rm -rf "$REPO_DIR/.venv"
+uv venv .venv --python "$PYTHON_VERSION"
 source .venv/bin/activate
 
-uv pip install --index-url "$TORCH_INDEX_URL" torch
-uv pip install \
-  transformers \
-  accelerate \
-  bitsandbytes \
-  peft \
-  trl \
-  datasets \
-  verifiers \
-  vllm \
-  scikit-learn \
-  scipy \
-  omegaconf \
-  multiprocess \
-  wandb \
-  sentencepiece \
-  tiktoken \
-  protobuf
+if [[ -f "$REPO_DIR/uv.lock" ]]; then
+  if ! python3 - <<'PY'; then
+from __future__ import annotations
+from pathlib import Path
+import tomllib
 
-mkdir -p "$TARGET_DIR/_deps"
-if [[ ! -d "$TARGET_DIR/_deps/MERA/.git" ]]; then
-  git clone --recurse-submodules "$MERA_REPO_URL" "$TARGET_DIR/_deps/MERA"
-else
-  git -C "$TARGET_DIR/_deps/MERA" pull --recurse-submodules
+path = Path("uv.lock")
+text = path.read_text()
+if not text.strip():
+    raise SystemExit(1)
+
+data = tomllib.loads(text)
+if "version" not in data:
+    raise SystemExit(1)
+PY
+    rm -f "$REPO_DIR/uv.lock"
+  fi
 fi
 
-ln -sfn "$TARGET_DIR/_deps/MERA" "$TARGET_DIR/MERA_repo"
+uv add --index "$TORCH_INDEX_URL" --index-strategy unsafe-best-match "torch==${TORCH_VERSION}"
 
-ENV_FILE="$TARGET_DIR/env.sh"
-{
-  echo "export WANDB_LOG_MODEL=false"
-  echo "export WANDB_WATCH=false"
-  echo "export WANDB_DISABLE_CODE=true"
-  echo "export WANDB_SILENT=true"
-  echo "export NCCL_CUMEM_ENABLE=0"
-  echo "export NCCL_CUMEM_HOST_ENABLE=0"
-  if [[ -n "$DATA_DIR" ]]; then
-    echo "export MERA_DATA_DIR=\"$DATA_DIR\""
-  fi
-  if [[ -n "$WANDB_PROJECT" ]]; then
-    echo "export WANDB_PROJECT=\"$WANDB_PROJECT\""
-  fi
-  if [[ -n "$WANDB_ENTITY" ]]; then
-    echo "export WANDB_ENTITY=\"$WANDB_ENTITY\""
-  fi
-  if [[ -n "$WANDB_RUN_GROUP" ]]; then
-    echo "export WANDB_RUN_GROUP=\"$WANDB_RUN_GROUP\""
-  fi
-} > "$ENV_FILE"
+mapfile -t missing < <(
+  python3 - <<'PY'
+from __future__ import annotations
+from pathlib import Path
+import tomllib
 
-cat <<EOF
+path = Path("pyproject.toml")
+data = tomllib.loads(path.read_text())
+deps = data.get("project", {}).get("dependencies", [])
+
+def dep_name(spec: str) -> str:
+    for sep in ("==", ">=", "<=", "~=", "!=", ">", "<"):
+        if sep in spec:
+            return spec.split(sep, 1)[0].strip()
+    return spec.strip()
+
+names = {dep_name(dep) for dep in deps}
+required = {
+    "transformers",
+    "datasets",
+    "peft",
+    "trl",
+    "accelerate",
+    "bitsandbytes",
+    "wandb",
+    "scikit-learn",
+    "tqdm",
+    "multiprocess",
+    "verifiers",
+    "omegaconf",
+    "boto3",
+    "scipy",
+    "sentencepiece",
+    "tiktoken",
+    "protobuf",
+}
+
+missing = sorted(required - names)
+for pkg in missing:
+    print(pkg)
+PY
+)
+
+if [[ ${#missing[@]} -gt 0 ]]; then
+  uv add "${missing[@]}"
+fi
+
+uv add vllm
+
+uv sync
+
+rm -rf /tmp/.tmp* /tmp/uv* /tmp/torchinductor_root
+rm -rf "$HOME/.cache/uv" "$HOME/.cache/pip" "$HOME/.cache/huggingface" "$HOME/.cache/torch"
+
+mkdir -p "$REPO_DIR/_deps"
+if [[ ! -d "$REPO_DIR/MERA_repo/.git" ]]; then
+  git clone --recurse-submodules "$MERA_REPO_URL" "$REPO_DIR/MERA_repo"
+else
+  git -C "$REPO_DIR/MERA_repo" pull --recurse-submodules
+fi
+
+if [[ ! -d "$PRIME_RL_DIR/.git" ]]; then
+  git clone "$PRIME_RL_REPO_URL" "$PRIME_RL_DIR"
+else
+  git -C "$PRIME_RL_DIR" pull
+fi
+
+(
+  cd "$PRIME_RL_DIR"
+  uv python install "$PRIME_RL_PYTHON_VERSION"
+  rm -rf "$PRIME_RL_DIR/.venv"
+  uv venv .venv --python "$PRIME_RL_PYTHON_VERSION"
+  uv sync
+  for env_dir in "$REPO_DIR/mera/environments"/*; do
+    if [[ -f "$env_dir/pyproject.toml" ]]; then
+      uv add --editable "$env_dir"
+    fi
+  done
+)
+
+cat <<SETUP_EOF
 Setup complete.
 
 Next steps:
-  source "$TARGET_DIR/.venv/bin/activate"
-  source "$ENV_FILE"
+  source "$REPO_DIR/.venv/bin/activate"
 
 Smoke tests:
   python mera/scripts/sft.py --limit 200 --epochs 1 --batch-size 1 --grad-accum 8
-  python mera/scripts/grpo.py --limit 100 --num-generations 1 --max-new-tokens 32 --fast
-EOF
+  python mera/scripts/grpo.py bps --dry-run
+  python mera/scripts/eval.py --limit 50 --tensor-parallel 1
+SETUP_EOF

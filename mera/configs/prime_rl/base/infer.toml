@@ -1,0 +1,11 @@
+[model]
+name = "Qwen/Qwen3-4B-Thinking-2507"
+max_model_len = 4096
+enforce_eager = true
+trust_remote_code = true
+
+gpu_memory_utilization = 0.85
+enable_lora = true
+max_lora_rank = 16
+
+[parallel]
