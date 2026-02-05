@@ -1,0 +1,9 @@
+export WANDB_LOG_MODEL=false
+export WANDB_WATCH=false
+export WANDB_DISABLE_CODE=true
+export WANDB_SILENT=true
+export NCCL_CUMEM_ENABLE=0
+export NCCL_CUMEM_HOST_ENABLE=0
+export HF_HOME=/opt/mera/.hf
+export HF_HUB_CACHE=/opt/mera/.hf/hub
+export MERA_DATA_DIR="/opt/mera/.hf/hub/datasets--MERA-evaluation--MERA/snapshots/73cf223e40f1ef51ba74a048b584874a35c3d88b/data"
