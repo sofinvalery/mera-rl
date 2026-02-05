@@ -15,7 +15,10 @@ from verifiers.parsers.parser import Parser
 from verifiers.types import Messages
 
 MERA_DATA_ENV = "MERA_DATA_DIR"
-MERA_CACHE_GLOB = "datasets--MERA-evaluation--MERA/snapshots/*/data"
+MERA_CACHE_GLOBS = [
+    "datasets--MERA-evaluation--MERA/snapshots/*/data",
+    ".hf/hub/datasets--MERA-evaluation--MERA/snapshots/*/data",
+]
 
 
 def _repo_root() -> Path:
@@ -37,9 +40,17 @@ def resolve_data_root(data_dir: Optional[str] = None) -> Path:
         raise FileNotFoundError(f"MERA data dir not found: {path}")
 
     candidates = []
-    for base in [_repo_root(), Path.cwd()]:
-        for match in base.glob(MERA_CACHE_GLOB):
-            candidates.append(match)
+    bases = [_repo_root(), Path.cwd()]
+
+    hf_home = os.getenv("HF_HOME")
+    if hf_home:
+        bases.append(Path(hf_home).expanduser())
+    bases.append(Path.home() / ".cache" / "huggingface")
+
+    for base in bases:
+        for pattern in MERA_CACHE_GLOBS:
+            for match in base.glob(pattern):
+                candidates.append(match)
     if not candidates:
         raise FileNotFoundError(
             "MERA dataset not found. Set MERA_DATA_DIR or place the HF cache under the repo."

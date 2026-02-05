@@ -194,6 +194,7 @@ required = {
     "sentencepiece",
     "tiktoken",
     "protobuf",
+    "setuptools",
 }
 
 missing = sorted(required - names)
@@ -207,6 +208,7 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 
 uv add vllm
+uv add "pyarrow<15"
 
 uv sync
 
