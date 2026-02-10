@@ -6,7 +6,6 @@ from pathlib import Path
 
 
 TASKS = [
-    "bps",
     "chegeka",
     "lcs",
     "mamuramu",
@@ -14,15 +13,13 @@ TASKS = [
     "multiq",
     "parus",
     "rcb",
-    "rudetox",
-    "rummlu",
+    "rucodeeval",
     "rumodar",
     "rumultiar",
     "ruopenbookqa",
     "rutie",
     "ruworldtree",
     "rwsd",
-    "simplear",
     "use",
 ]
 
@@ -66,7 +63,7 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     return parser.parse_known_args()
 
 
-def build_command(args: argparse.Namespace, extra_args: list[str]) -> list[str]:
+def build_rl_args(args: argparse.Namespace, extra_args: list[str]) -> list[str]:
     task_dir = args.config_root / args.task
     train_path = task_dir / "train.toml"
     orch_path = task_dir / "orch.toml"
@@ -80,9 +77,6 @@ def build_command(args: argparse.Namespace, extra_args: list[str]) -> list[str]:
     output_dir = args.output_dir or Path("outputs") / "grpo_prime" / args.task
 
     cmd = [
-        "uv",
-        "run",
-        "rl",
         "--trainer",
         "@",
         str(train_path),
@@ -102,6 +96,13 @@ def build_command(args: argparse.Namespace, extra_args: list[str]) -> list[str]:
     return cmd + extra_args
 
 
+def resolve_rl_entrypoint(prime_rl_dir: Path) -> list[str]:
+    rl_bin = prime_rl_dir / ".venv" / "bin" / "rl"
+    if rl_bin.exists():
+        return [str(rl_bin)]
+    return ["uv", "run", "rl"]
+
+
 def resolve_prime_rl_dir(args: argparse.Namespace) -> Path:
     if args.prime_rl_dir is not None:
         return args.prime_rl_dir
@@ -114,7 +115,8 @@ def main() -> None:
     prime_rl_dir = resolve_prime_rl_dir(args)
     if not prime_rl_dir.exists():
         raise FileNotFoundError(f"prime-rl repo not found: {prime_rl_dir}")
-    cmd = build_command(args, extra_args)
+    entrypoint = resolve_rl_entrypoint(prime_rl_dir)
+    cmd = entrypoint + build_rl_args(args, extra_args)
     if args.dry_run:
         print(f"(prime-rl cwd) {prime_rl_dir}")
         print(" ".join(cmd))

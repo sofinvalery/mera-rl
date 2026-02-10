@@ -1,5 +1,5 @@
 toml_files = ["../base/orch.toml"]
 
 [[env]]
-id = "lcs"
-args = { split = "public_test" }
+id = "rucodeeval"
+args = { split = "test" }

@@ -2,4 +2,4 @@ toml_files = ["../base/orch.toml"]
 
 [[env]]
 id = "rutie"
-args = { split = "test" }
+args = { split = "train" }

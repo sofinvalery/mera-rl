@@ -239,7 +239,7 @@ def build_submission_files(
 
 
 def run_scoring(zip_path: Path, results_path: Path) -> Dict[str, Any]:
-    scoring_root = Path(__file__).resolve().parents[2] / "MERA_repo" / "modules" / "scoring"
+    scoring_root = mera_common.resolve_mera_repo_root() / "modules" / "scoring"
     zip_path = Path(zip_path).resolve()
     results_path = Path(results_path).resolve()
     sys.path.insert(0, str(scoring_root))

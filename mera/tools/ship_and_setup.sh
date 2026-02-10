@@ -12,7 +12,7 @@ Options:
   --port PORT            SSH port (default: 22)
   --key PATH             SSH private key
   --proxyjump HOST       SSH ProxyJump
-  --target DIR           Target install directory on remote (default: ~/mera)
+  --target DIR           Target install directory on remote (default: /workspace/rl/mera-rl)
   --torch-index-url URL  PyTorch wheel index URL (default: https://download.pytorch.org/whl/cu124)
   --data-dir DIR         MERA_DATA_DIR value to write into env.sh
   --wandb-project NAME   WANDB_PROJECT value to write into env.sh
@@ -28,7 +28,7 @@ HOST=""
 PORT="22"
 KEY=""
 PROXYJUMP=""
-TARGET_DIR="~/mera"
+TARGET_DIR="/workspace/rl/mera-rl"
 TORCH_INDEX_URL="https://download.pytorch.org/whl/cu124"
 DATA_DIR=""
 WANDB_PROJECT=""

@@ -15,6 +15,7 @@ from verifiers.parsers.parser import Parser
 from verifiers.types import Messages
 
 MERA_DATA_ENV = "MERA_DATA_DIR"
+MERA_REPO_ENV = "MERA_REPO_DIR"
 MERA_CACHE_GLOBS = [
     "datasets--MERA-evaluation--MERA/snapshots/*/data",
     ".hf/hub/datasets--MERA-evaluation--MERA/snapshots/*/data",
@@ -23,6 +24,42 @@ MERA_CACHE_GLOBS = [
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _looks_like_mera_repo(path: Path) -> bool:
+    if not path.exists():
+        return False
+    return (path / "modules" / "scoring").exists() or (path / "humanbenchmarks").exists()
+
+
+def find_mera_repo_root(override: Optional[str] = None) -> Optional[Path]:
+    if override:
+        path = Path(override).expanduser().resolve()
+        return path if _looks_like_mera_repo(path) else None
+
+    env_dir = os.getenv(MERA_REPO_ENV)
+    if env_dir:
+        path = Path(env_dir).expanduser().resolve()
+        return path if _looks_like_mera_repo(path) else None
+
+    repo_root = _repo_root()
+    candidates = [repo_root / "_deps" / "MERA"]
+    for path in candidates:
+        if _looks_like_mera_repo(path):
+            return path.resolve()
+    return None
+
+
+def resolve_mera_repo_root(override: Optional[str] = None) -> Path:
+    path = find_mera_repo_root(override)
+    if path is None:
+        repo_root = _repo_root()
+        raise FileNotFoundError(
+            "MERA repo not found. Expected one of: "
+            f"{repo_root / '_deps' / 'MERA'}. "
+            f"You can also set {MERA_REPO_ENV}."
+        )
+    return path
 
 
 def resolve_data_root(data_dir: Optional[str] = None) -> Path:
@@ -342,20 +379,21 @@ class RuDetoxScorer:
         self._style_model.to(self._device())
         self._style_tokenizer = AutoTokenizer.from_pretrained("IlyaGusev/rubertconv_toxic_clf")
 
-        calibration_candidates = [
-            _repo_root()
-            / "MERA_repo"
-            / "humanbenchmarks"
-            / "ruDetox"
-            / "score_calibrations_ru.pkl",
-            _repo_root()
-            / "MERA_repo"
-            / "lm-evaluation-harness"
-            / "lm_eval"
-            / "tasks"
-            / "rudetox"
-            / "score_calibrations_ru.pkl",
-        ]
+        mera_repo = find_mera_repo_root()
+        calibration_candidates = []
+        if mera_repo is not None:
+            calibration_candidates = [
+                mera_repo
+                / "humanbenchmarks"
+                / "ruDetox"
+                / "score_calibrations_ru.pkl",
+                mera_repo
+                / "lm-evaluation-harness"
+                / "lm_eval"
+                / "tasks"
+                / "rudetox"
+                / "score_calibrations_ru.pkl",
+            ]
         calibration_path = next((path for path in calibration_candidates if path.exists()), None)
         if calibration_path:
             with calibration_path.open("rb") as handle:
