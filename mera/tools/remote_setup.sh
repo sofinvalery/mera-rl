@@ -3,50 +3,36 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: remote_setup.sh [--repo-dir DIR] [--bundle PATH --target DIR] [options]
+Usage: remote_setup.sh [options]
 
-Installs / updates dependencies and prepares a Prime-RL venv (Python 3.12).
+Sets up an Ubuntu machine (with NVIDIA GPUs) to run MERA SFT, GRPO, and evals.
+Creates:
+  - <repo>/.venv (Python 3.11) for MERA scripts
+  - <repo>/_deps/prime-rl/.venv (Python 3.12) for Prime-RL (GRPO)
 
 Options:
-  --repo-dir DIR            Repo root (default: inferred when running inside the repo)
-  --bundle PATH             Tarball produced by ship_and_setup.sh
-  --target DIR              Extraction directory for --bundle
-  --keep-bundle             Keep the tarball after extraction
+  --repo-dir DIR           Repo root (default: inferred from script location)
+  --python VER             Python version for MERA venv (default: 3.11)
+  --prime-rl-python VER    Python version for Prime-RL venv (default: 3.12)
+  --torch-index-url URL    PyTorch index URL (default: https://download.pytorch.org/whl/cu124)
+  --recreate-venvs         Recreate both venvs from scratch
 
-  --prime-rl-python VER     Python version for Prime-RL venv (default: 3.12)
-  --prime-rl-repo-url URL   Prime-RL repo URL (default: https://github.com/PrimeIntellect-ai/prime-rl.git)
-  --prime-rl-dir DIR        Prime-RL install directory (default: <repo>/_deps/prime-rl)
-  --recreate-venv           Recreate Prime-RL .venv from scratch (slow)
-
-  --mera-repo-url URL       MERA repo URL (default: https://github.com/MERA-Evaluation/MERA.git)
-  --mera-dir DIR            MERA install directory (default: <repo>/_deps/MERA)
-
-  --data-dir DIR            MERA_DATA_DIR value to write into env.sh
-  --hf-home DIR             HF_HOME value to write into env.sh (default: /workspace/rl/.hf)
-  --wandb-project NAME      WANDB_PROJECT value to write into env.sh
-  --wandb-entity NAME       WANDB_ENTITY value to write into env.sh
-  --wandb-run-group NAME    WANDB_RUN_GROUP value to write into env.sh
-
-Compatibility (ignored):
-  --torch-index-url URL
-  --torch-version VER
+  --data-dir DIR           MERA_DATA_DIR value to write into env.sh
+  --hf-home DIR            HF_HOME value to write into env.sh (default: <repo>/.hf)
+  --wandb-project NAME     WANDB_PROJECT value to write into env.sh
+  --wandb-entity NAME      WANDB_ENTITY value to write into env.sh
+  --wandb-run-group NAME   WANDB_RUN_GROUP value to write into env.sh
 USAGE
 }
 
 REPO_DIR=""
-BUNDLE_PATH=""
-TARGET_DIR=""
-KEEP_BUNDLE="false"
-
+PYTHON_VERSION="3.11"
 PRIME_RL_PYTHON_VERSION="3.12"
-MERA_REPO_URL="https://github.com/MERA-Evaluation/MERA.git"
-PRIME_RL_REPO_URL="https://github.com/PrimeIntellect-ai/prime-rl.git"
-PRIME_RL_DIR=""
-MERA_DIR=""
-RECREATE_VENV="false"
+TORCH_INDEX_URL="https://download.pytorch.org/whl/cu124"
+RECREATE_VENVS="false"
 
 DATA_DIR=""
-HF_HOME_DIR="/workspace/rl/.hf"
+HF_HOME_DIR=""
 WANDB_PROJECT=""
 WANDB_ENTITY=""
 WANDB_RUN_GROUP=""
@@ -57,47 +43,21 @@ while [[ $# -gt 0 ]]; do
       REPO_DIR="$2"
       shift 2
       ;;
-    --bundle)
-      BUNDLE_PATH="$2"
-      shift 2
-      ;;
-    --target)
-      TARGET_DIR="$2"
-      shift 2
-      ;;
-    --keep-bundle|--keep-remote-bundle)
-      KEEP_BUNDLE="true"
-      shift 1
-      ;;
-    --torch-index-url)
-      shift 2
-      ;;
-    --torch-version)
+    --python)
+      PYTHON_VERSION="$2"
       shift 2
       ;;
     --prime-rl-python)
       PRIME_RL_PYTHON_VERSION="$2"
       shift 2
       ;;
-    --mera-repo-url)
-      MERA_REPO_URL="$2"
+    --torch-index-url)
+      TORCH_INDEX_URL="$2"
       shift 2
       ;;
-    --prime-rl-repo-url)
-      PRIME_RL_REPO_URL="$2"
-      shift 2
-      ;;
-    --prime-rl-dir)
-      PRIME_RL_DIR="$2"
-      shift 2
-      ;;
-    --recreate-venv)
-      RECREATE_VENV="true"
+    --recreate-venvs)
+      RECREATE_VENVS="true"
       shift 1
-      ;;
-    --mera-dir)
-      MERA_DIR="$2"
-      shift 2
       ;;
     --data-dir)
       DATA_DIR="$2"
@@ -131,29 +91,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -n "$BUNDLE_PATH" ]]; then
-  if [[ -z "$TARGET_DIR" ]]; then
-    echo "--target is required when using --bundle" >&2
-    usage
-    exit 1
-  fi
-  mkdir -p "$TARGET_DIR"
-  tar -xzf "$BUNDLE_PATH" -C "$TARGET_DIR"
-  if [[ "$KEEP_BUNDLE" != "true" ]]; then
-    rm -f "$BUNDLE_PATH"
-  fi
-  REPO_DIR="$TARGET_DIR"
-fi
-
 if [[ -z "$REPO_DIR" ]]; then
   REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-fi
-
-if [[ -z "$PRIME_RL_DIR" ]]; then
-  PRIME_RL_DIR="$REPO_DIR/_deps/prime-rl"
-fi
-if [[ -z "$MERA_DIR" ]]; then
-  MERA_DIR="$REPO_DIR/_deps/MERA"
 fi
 
 APT_GET="apt-get"
@@ -163,10 +102,7 @@ fi
 
 DEBIAN_FRONTEND=noninteractive $APT_GET update -y
 DEBIAN_FRONTEND=noninteractive $APT_GET install -y \
-  python3 python3-venv build-essential git curl ca-certificates \
-  tmux htop nvtop git-lfs openssh-client
-
-git lfs install || true
+  python3 python3-venv build-essential git curl ca-certificates
 
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -174,69 +110,50 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 
 cd "$REPO_DIR"
-mkdir -p "$REPO_DIR/_deps"
+if [[ ! -f "$REPO_DIR/pyproject.toml" ]]; then
+  echo "pyproject.toml not found in $REPO_DIR" >&2
+  exit 1
+fi
 
 if [[ -e "$REPO_DIR/.git" && -f "$REPO_DIR/.gitmodules" ]]; then
-  git -C "$REPO_DIR" submodule update --init --recursive || true
+  git -C "$REPO_DIR" submodule sync --recursive || true
+  git -C "$REPO_DIR" submodule update --init --recursive
 fi
 
-if [[ -f "$MERA_DIR/.git" ]]; then
-  echo "Using MERA submodule at $MERA_DIR"
-elif [[ -d "$MERA_DIR/.git" ]]; then
-  git -C "$MERA_DIR" pull --recurse-submodules
+MERA_DIR="$REPO_DIR/_deps/MERA"
+PRIME_RL_DIR="$REPO_DIR/_deps/prime-rl"
+
+if [[ -z "$HF_HOME_DIR" ]]; then
+  HF_HOME_DIR="$REPO_DIR/.hf"
+fi
+mkdir -p "$HF_HOME_DIR" "$HF_HOME_DIR/datasets" "$HF_HOME_DIR/hub"
+
+VENV_FLAGS=(--allow-existing --seed)
+if [[ "$RECREATE_VENVS" == "true" ]]; then
+  VENV_FLAGS=(--clear --seed)
+fi
+
+uv python install "$PYTHON_VERSION"
+uv venv "$REPO_DIR/.venv" --python "$PYTHON_VERSION" "${VENV_FLAGS[@]}"
+
+if [[ -f "$REPO_DIR/uv.lock" ]]; then
+  uv sync --frozen --index "$TORCH_INDEX_URL" --index-strategy unsafe-best-match
 else
-  rm -rf "$MERA_DIR"
-  git clone --recurse-submodules "$MERA_REPO_URL" "$MERA_DIR"
+  uv sync --index "$TORCH_INDEX_URL" --index-strategy unsafe-best-match
 fi
 
-if [[ -f "$PRIME_RL_DIR/.git" ]]; then
-  echo "Using prime-rl submodule at $PRIME_RL_DIR"
-elif [[ -d "$PRIME_RL_DIR/.git" ]]; then
-  git -C "$PRIME_RL_DIR" pull
-else
-  rm -rf "$PRIME_RL_DIR"
-  git clone "$PRIME_RL_REPO_URL" "$PRIME_RL_DIR"
+if [[ -d "$PRIME_RL_DIR" ]]; then
+  (
+    cd "$PRIME_RL_DIR"
+    uv python install "$PRIME_RL_PYTHON_VERSION"
+    uv venv .venv --python "$PRIME_RL_PYTHON_VERSION" "${VENV_FLAGS[@]}"
+    if [[ -f "uv.lock" ]]; then
+      uv sync --frozen
+    else
+      uv sync
+    fi
+  )
 fi
-
-(
-  cd "$PRIME_RL_DIR"
-  uv python install "$PRIME_RL_PYTHON_VERSION"
-  if [[ "$RECREATE_VENV" == "true" || ! -d ".venv" ]]; then
-    rm -rf ".venv"
-    uv venv .venv --python "$PRIME_RL_PYTHON_VERSION"
-  fi
-  uv sync
-)
-
-VENV_PY="$PRIME_RL_DIR/.venv/bin/python"
-uv pip install --python "$VENV_PY" multiprocess omegaconf scikit-learn boto3
-
-INSTALL_ENVS=(
-  chegeka
-  lcs
-  mamuramu
-  mathlogicqa
-  multiq
-  parus
-  rcb
-  rucodeeval
-  rumodar
-  rumultiar
-  ruopenbookqa
-  rutie
-  ruworldtree
-  rwsd
-  use
-)
-
-for env_name in "${INSTALL_ENVS[@]}"; do
-  env_dir="$REPO_DIR/mera/environments/$env_name"
-  if [[ ! -f "$env_dir/pyproject.toml" ]]; then
-    echo "Missing environment package: $env_dir" >&2
-    exit 1
-  fi
-  uv pip install --python "$VENV_PY" -e "$env_dir"
-done
 
 {
   echo "#!/usr/bin/env bash"
@@ -244,6 +161,9 @@ done
   printf 'export HF_HOME=%q\n' "$HF_HOME_DIR"
   printf 'export HF_DATASETS_CACHE=%q\n' "$HF_HOME_DIR/datasets"
   printf 'export HF_HUB_CACHE=%q\n' "$HF_HOME_DIR/hub"
+  if [[ -d "$MERA_DIR" ]]; then
+    printf 'export MERA_REPO_DIR=%q\n' "$MERA_DIR"
+  fi
   if [[ -n "$DATA_DIR" ]]; then
     printf 'export MERA_DATA_DIR=%q\n' "$DATA_DIR"
   fi
@@ -257,19 +177,22 @@ done
     printf 'export WANDB_RUN_GROUP=%q\n' "$WANDB_RUN_GROUP"
   fi
 } > "$REPO_DIR/env.sh"
+chmod +x "$REPO_DIR/env.sh"
 
-mkdir -p "$HF_HOME_DIR" "$HF_HOME_DIR/datasets" "$HF_HOME_DIR/hub"
-
-cat <<SETUP_EOF
+cat <<EOF2
 Setup complete.
+
+MERA venv:
+  source "$REPO_DIR/.venv/bin/activate"
 
 Prime-RL venv:
   $PRIME_RL_DIR/.venv
 
-Next steps:
-  if [ -f "$REPO_DIR/env.sh" ]; then source "$REPO_DIR/env.sh"; fi
+Environment:
+  source "$REPO_DIR/env.sh"
 
 Smoke tests:
-  python mera/scripts/grpo.py mathlogicqa --dry-run
-  $PRIME_RL_DIR/.venv/bin/python mera/scripts/eval.py --limit 50 --tensor-parallel 1 --skip-scoring
-SETUP_EOF
+  python mera/scripts/sft.py --limit 50 --epochs 1 --batch-size 1 --grad-accum 4 --output-dir outputs/smoke_sft
+  python mera/scripts/grpo.py bps --dry-run
+  python mera/scripts/eval_base.py --limit 1 --tensor-parallel 1 --skip-scoring --output-dir outputs/smoke_eval_base
+EOF2
