@@ -12,7 +12,7 @@ import sys
 
 import torch
 from datasets import Dataset
-from peft import LoraConfig
+from peft import AutoPeftModelForCausalLM, LoraConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import SFTTrainer, SFTConfig
 from tqdm import tqdm
@@ -24,7 +24,7 @@ if str(env_root) not in sys.path:
 import mera_common
 
 
-TRAIN_TASKS = [
+ALL_SFT_TASKS = [
     "bps",
     "chegeka",
     "lcs",
@@ -44,6 +44,44 @@ TRAIN_TASKS = [
     "simplear",
     "use",
 ]
+
+FAIR_SFT_TASKS = [
+    "chegeka",
+    "lcs",
+    "mamuramu",
+    "mathlogicqa",
+    "multiq",
+    "parus",
+    "rcb",
+    "rumodar",
+    "rumultiar",
+    "ruopenbookqa",
+    "rutie",
+    "ruworldtree",
+    "rwsd",
+    "use",
+]
+
+SFT_SPLITS = {
+    "bps": "train",
+    "chegeka": "train",
+    "lcs": "public_test",
+    "mamuramu": "train",
+    "mathlogicqa": "train",
+    "multiq": "train",
+    "parus": "train",
+    "rcb": "train",
+    "rudetox": "train",
+    "rummlu": "train",
+    "rumodar": "public_test",
+    "rumultiar": "train",
+    "ruopenbookqa": "train",
+    "rutie": "train",
+    "ruworldtree": "train",
+    "rwsd": "train",
+    "simplear": "train",
+    "use": "train",
+}
 
 
 def build_text(prompt: str, answer: Any, tokenizer: AutoTokenizer) -> str:
@@ -73,10 +111,30 @@ def build_rutie_context(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return output
 
 
-def build_sft_dataset(data_dir: str | None, tokenizer: AutoTokenizer, limit: int | None) -> Dataset:
+def resolve_sft_tasks(args: argparse.Namespace) -> list[str]:
+    if args.tasks:
+        tasks = args.tasks
+    elif args.task_set == "all":
+        tasks = ALL_SFT_TASKS
+    else:
+        tasks = FAIR_SFT_TASKS
+
+    unknown = sorted(set(tasks) - set(SFT_SPLITS))
+    if unknown:
+        raise ValueError(f"Unknown SFT task(s): {', '.join(unknown)}")
+    return tasks
+
+
+def build_sft_dataset(
+    data_dir: str | None,
+    tokenizer: AutoTokenizer,
+    limit: int | None,
+    tasks: list[str],
+) -> Dataset:
     rows = []
-    for task in tqdm(TRAIN_TASKS, desc="sft tasks", unit="task"):
-        records = mera_common.load_task_split(task, "train", data_dir=data_dir)
+    for task in tqdm(tasks, desc="sft tasks", unit="task"):
+        split = SFT_SPLITS[task]
+        records = mera_common.load_task_split(task, split, data_dir=data_dir)
         if limit:
             records = records[:limit]
         if task == "rutie":
@@ -116,11 +174,38 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb-project", default=None)
     parser.add_argument("--wandb-entity", default=None)
     parser.add_argument("--wandb-run-name", default=None)
+    parser.add_argument(
+        "--task-set",
+        choices=["fair", "all"],
+        default="fair",
+        help="Task preset: fair excludes diagnostic tasks and keeps fair training splits.",
+    )
+    parser.add_argument(
+        "--tasks",
+        nargs="+",
+        default=None,
+        help="Explicit task subset to train on (overrides --task-set).",
+    )
+    parser.add_argument(
+        "--save-merged",
+        action="store_true",
+        help="Save a merged full model checkpoint after LoRA SFT.",
+    )
+    parser.add_argument(
+        "--merged-output-dir",
+        default=None,
+        help="Path for merged model output (default: <output-dir>/merged).",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.merged_output_dir and not args.save_merged:
+        args.save_merged = True
+
+    tasks = resolve_sft_tasks(args)
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -161,7 +246,7 @@ def main() -> None:
         task_type="CAUSAL_LM",
     )
 
-    dataset = build_sft_dataset(args.data_dir, tokenizer, args.limit)
+    dataset = build_sft_dataset(args.data_dir, tokenizer, args.limit, tasks)
 
     if wandb_run is not None:
         task_counts = Counter(dataset["task"])
@@ -194,6 +279,29 @@ def main() -> None:
     )
     trainer.train()
     trainer.save_model(str(output_dir))
+
+    if args.save_merged:
+        merged_output_dir = (
+            Path(args.merged_output_dir) if args.merged_output_dir else output_dir / "merged"
+        )
+
+        del trainer
+        del model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        merge_model = AutoPeftModelForCausalLM.from_pretrained(
+            str(output_dir),
+            torch_dtype=dtype,
+            device_map="auto",
+        )
+        merged_model = merge_model.merge_and_unload()
+        merged_output_dir.mkdir(parents=True, exist_ok=True)
+        merged_model.save_pretrained(str(merged_output_dir), safe_serialization=True)
+        tokenizer.save_pretrained(str(merged_output_dir))
+
+        if wandb_run is not None:
+            wandb_run.summary["model/merged_path"] = str(merged_output_dir)
 
     if wandb_run is not None:
         wandb_run.finish()

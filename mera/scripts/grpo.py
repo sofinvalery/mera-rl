@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import tomllib
 from pathlib import Path
 
 
@@ -22,6 +23,8 @@ TASKS = [
     "rwsd",
     "use",
 ]
+
+FAIR_TRAIN_SPLITS = {"train", "public_test"}
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
@@ -60,7 +63,58 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
         action="store_true",
         help="Print the Prime-RL command without running it.",
     )
+    parser.add_argument(
+        "--allow-test-split",
+        action="store_true",
+        help=(
+            "Allow GRPO on non-fair splits (e.g. test/validation). "
+            "By default only train/public_test splits are allowed."
+        ),
+    )
     return parser.parse_known_args()
+
+
+def _collect_splits_from_toml(path: Path, seen: set[Path] | None = None) -> list[str]:
+    if seen is None:
+        seen = set()
+    path = path.resolve()
+    if path in seen or not path.exists():
+        return []
+    seen.add(path)
+
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    splits: list[str] = []
+
+    for env in data.get("env", []):
+        if not isinstance(env, dict):
+            continue
+        args = env.get("args", {})
+        if isinstance(args, dict):
+            split = args.get("split")
+            if isinstance(split, str):
+                splits.append(split)
+
+    for include in data.get("toml_files", []):
+        if not isinstance(include, str):
+            continue
+        child = (path.parent / include).resolve()
+        splits.extend(_collect_splits_from_toml(child, seen))
+
+    return splits
+
+
+def _validate_fair_training_splits(orch_path: Path, allow_test_split: bool) -> None:
+    splits = _collect_splits_from_toml(orch_path)
+    non_fair = sorted({split for split in splits if split not in FAIR_TRAIN_SPLITS})
+    if not non_fair or allow_test_split:
+        return
+
+    joined = ", ".join(non_fair)
+    raise ValueError(
+        "Refusing to run GRPO on non-fair split(s): "
+        f"{joined}. Allowed by default: {sorted(FAIR_TRAIN_SPLITS)}. "
+        "If this is intentional exploratory training, pass --allow-test-split."
+    )
 
 
 def build_rl_args(args: argparse.Namespace, extra_args: list[str]) -> list[str]:
@@ -73,6 +127,8 @@ def build_rl_args(args: argparse.Namespace, extra_args: list[str]) -> list[str]:
     if missing:
         missing_list = ", ".join(str(path) for path in missing)
         raise FileNotFoundError(f"Missing Prime-RL config(s): {missing_list}")
+
+    _validate_fair_training_splits(orch_path, allow_test_split=args.allow_test_split)
 
     output_dir = args.output_dir or Path("outputs") / "grpo_prime" / args.task
 

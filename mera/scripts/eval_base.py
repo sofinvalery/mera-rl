@@ -27,6 +27,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb-run-name", default="eval-base")
     parser.add_argument("--skip-scoring", action="store_true")
     parser.add_argument("--force-score", action="store_true")
+    parser.add_argument(
+        "--task-set",
+        choices=["all", "benchmark", "validation"],
+        default="all",
+        help="Task preset to evaluate.",
+    )
+    parser.add_argument(
+        "--tasks",
+        nargs="+",
+        default=None,
+        help="Explicit subset of tasks to evaluate (overrides --task-set).",
+    )
     return parser.parse_args()
 
 
@@ -51,6 +63,8 @@ def main() -> None:
         str(args.max_model_len),
         "--gpu-memory-utilization",
         str(args.gpu_memory_utilization),
+        "--task-set",
+        args.task_set,
     ]
 
     if args.data_dir:
@@ -59,6 +73,8 @@ def main() -> None:
         cmd.extend(["--limit", str(args.limit)])
     if args.enforce_eager:
         cmd.append("--enforce-eager")
+    if args.tasks:
+        cmd.extend(["--tasks", *args.tasks])
     if args.skip_scoring or (args.limit is not None and not args.force_score):
         cmd.append("--skip-scoring")
     if args.wandb:

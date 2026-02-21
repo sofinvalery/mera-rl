@@ -7,8 +7,11 @@ Usage: remote_setup.sh [options]
 
 Sets up an Ubuntu machine (with NVIDIA GPUs) to run MERA SFT, GRPO, and evals.
 Creates:
-  - <repo>/.venv (Python 3.11) for MERA scripts
-  - <repo>/_deps/prime-rl/.venv (Python 3.12) for Prime-RL (GRPO)
+  - <repo>/.venv (Python 3.11) for legacy MERA scripts
+  - <repo>/_deps/prime-rl/.venv (Python 3.12) for Prime-RL + MERA wrappers
+
+Notes:
+  - On RTX 5090-class GPUs, use <repo>/_deps/prime-rl/.venv/bin/python for SFT/GRPO/eval scripts.
 
 Options:
   --repo-dir DIR           Repo root (default: inferred from script location)
@@ -148,11 +151,42 @@ if [[ -d "$PRIME_RL_DIR" ]]; then
     uv python install "$PRIME_RL_PYTHON_VERSION"
     uv venv .venv --python "$PRIME_RL_PYTHON_VERSION" "${VENV_FLAGS[@]}"
     if [[ -f "uv.lock" ]]; then
-      uv sync --frozen
+      uv sync --frozen --extra flash-attn
     else
-      uv sync
+      uv sync --extra flash-attn
     fi
   )
+
+  PRIME_PY="$PRIME_RL_DIR/.venv/bin/python"
+  uv pip install --python "$PRIME_PY" trl peft
+
+  ENV_PACKAGES=(
+    chegeka
+    lcs
+    mamuramu
+    mathlogicqa
+    multiq
+    parus
+    rcb
+    rucodeeval
+    rumodar
+    rumultiar
+    ruopenbookqa
+    rutie
+    ruworldtree
+    rwsd
+    use
+  )
+  ENV_INSTALL_ARGS=()
+  for pkg in "${ENV_PACKAGES[@]}"; do
+    pkg_path="$REPO_DIR/mera/environments/$pkg"
+    if [[ -d "$pkg_path" ]]; then
+      ENV_INSTALL_ARGS+=("-e" "$pkg_path")
+    fi
+  done
+  if [[ ${#ENV_INSTALL_ARGS[@]} -gt 0 ]]; then
+    uv pip install --python "$PRIME_PY" "${ENV_INSTALL_ARGS[@]}"
+  fi
 fi
 
 {
@@ -161,6 +195,7 @@ fi
   printf 'export HF_HOME=%q\n' "$HF_HOME_DIR"
   printf 'export HF_DATASETS_CACHE=%q\n' "$HF_HOME_DIR/datasets"
   printf 'export HF_HUB_CACHE=%q\n' "$HF_HOME_DIR/hub"
+  printf 'export VLLM_ATTENTION_BACKEND=%q\n' "TRITON_ATTN"
   if [[ -d "$MERA_DIR" ]]; then
     printf 'export MERA_REPO_DIR=%q\n' "$MERA_DIR"
   fi
@@ -192,7 +227,7 @@ Environment:
   source "$REPO_DIR/env.sh"
 
 Smoke tests:
-  python mera/scripts/sft.py --limit 50 --epochs 1 --batch-size 1 --grad-accum 4 --output-dir outputs/smoke_sft
-  python mera/scripts/grpo.py bps --dry-run
-  python mera/scripts/eval_base.py --limit 1 --tensor-parallel 1 --skip-scoring --output-dir outputs/smoke_eval_base
+  $PRIME_RL_DIR/.venv/bin/python mera/scripts/sft.py --limit 50 --epochs 1 --batch-size 1 --grad-accum 4 --output-dir outputs/smoke_sft
+  $PRIME_RL_DIR/.venv/bin/python mera/scripts/grpo.py chegeka --dry-run
+  $PRIME_RL_DIR/.venv/bin/python mera/scripts/eval_base.py --limit 1 --tensor-parallel 1 --skip-scoring --output-dir outputs/smoke_eval_base
 EOF2

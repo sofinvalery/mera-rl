@@ -48,6 +48,26 @@ ALL_TASKS = [
     "ruhhh",
 ]
 
+BENCHMARK_TASKS = [
+    "chegeka",
+    "lcs",
+    "mamuramu",
+    "mathlogicqa",
+    "multiq",
+    "parus",
+    "rcb",
+    "rucodeeval",
+    "rumodar",
+    "rumultiar",
+    "ruopenbookqa",
+    "rutie",
+    "ruworldtree",
+    "rwsd",
+    "use",
+]
+
+VALIDATION_TASKS = ["parus", "rcb", "rwsd", "use"]
+
 
 TASK_FILE_NAMES = {
     "bps": "BPS",
@@ -276,12 +296,41 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb-entity", default=None)
     parser.add_argument("--wandb-run-name", default=None)
     parser.add_argument("--skip-scoring", action="store_true")
+    parser.add_argument(
+        "--task-set",
+        choices=["all", "benchmark", "validation"],
+        default="all",
+        help="Task preset to evaluate.",
+    )
+    parser.add_argument(
+        "--tasks",
+        nargs="+",
+        default=None,
+        help="Explicit subset of tasks to evaluate (overrides --task-set).",
+    )
     return parser.parse_args()
+
+
+def resolve_eval_tasks(task_set: str, tasks: list[str] | None) -> list[str]:
+    if tasks:
+        selected = tasks
+    elif task_set == "benchmark":
+        selected = BENCHMARK_TASKS
+    elif task_set == "validation":
+        selected = VALIDATION_TASKS
+    else:
+        selected = ALL_TASKS
+
+    unknown = sorted(set(selected) - set(ALL_TASKS))
+    if unknown:
+        raise ValueError(f"Unknown eval task(s): {', '.join(unknown)}")
+    return selected
 
 
 def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir).resolve()
+    eval_tasks = resolve_eval_tasks(args.task_set, args.tasks)
 
     wandb_run = None
     if args.wandb:
@@ -308,7 +357,7 @@ def main() -> None:
     )
 
     task_outputs = {}
-    for task in tqdm(ALL_TASKS, desc="eval tasks", unit="task"):
+    for task in tqdm(eval_tasks, desc="eval tasks", unit="task"):
         task_outputs[task] = run_task(
             task,
             llm,

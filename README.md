@@ -28,42 +28,80 @@ This creates two virtual environments:
 - MERA venv (Python 3.11): `.venv`
 - Prime-RL venv (Python 3.12): `_deps/prime-rl/.venv`
 
-It also writes `env.sh` with local Hugging Face cache settings (defaults to `<repo>/.hf`).
+It also writes `env.sh` with local Hugging Face cache settings.
 
-## Running
+## Runtime recommendation (RTX 5090)
 
-Activate the MERA venv and load environment variables:
+Use Prime-RL Python for all stages (eval, SFT, GRPO):
 
 ```bash
-source .venv/bin/activate
 source env.sh
+PY=_deps/prime-rl/.venv/bin/python
 ```
 
-### SFT
+## Fair split policy
+
+Default GRPO behavior is strict fair mode:
+- allowed splits: `train`, `public_test`
+- blocked by default: `test`, `validation`
+
+To run exploratory/non-fair training (for example, `rucodeeval` which only has `test`), pass:
 
 ```bash
-python mera/scripts/sft.py --limit 200 --epochs 1 --batch-size 1 --grad-accum 8
+--allow-test-split
 ```
 
-### GRPO (Prime-RL)
+SFT defaults to fair task set (`--task-set fair`) and uses per-task fair splits:
+- `lcs`: `public_test`
+- `rumodar`: `public_test`
+- others in fair set: `train`
 
-`grpo.py` is a thin wrapper that runs Prime-RL via `uv run` inside `_deps/prime-rl`.
+## Pipeline (recommended)
+
+1) Base eval
 
 ```bash
-python mera/scripts/grpo.py bps --dry-run
-python mera/scripts/grpo.py bps
+$PY mera/scripts/eval.py --model <base_model> --tensor-parallel 2 --output-dir outputs/eval_base
 ```
 
-### Evals
-
-Generate a submission zip without scoring:
+2) SFT
 
 ```bash
-python mera/scripts/eval_base.py --limit 50 --tensor-parallel 1 --skip-scoring
+$PY mera/scripts/sft.py --model <base_model> --task-set fair --epochs 1 --batch-size 1 --grad-accum 16 --save-merged --output-dir outputs/sft
 ```
 
-If you have the MERA dataset cached (or set `MERA_DATA_DIR`), you can run full scoring via:
+3) Intermediate eval after SFT (recommended)
 
 ```bash
-python mera/scripts/eval.py --limit 50 --tensor-parallel 1
+$PY mera/scripts/eval.py --model outputs/sft/merged --task-set benchmark --tensor-parallel 2 --output-dir outputs/eval_sft
 ```
+
+For a fast proxy eval on validation-only subset:
+
+```bash
+$PY mera/scripts/eval_base.py --model outputs/sft/merged --task-set validation --tasks parus rcb rwsd use --split validation --skip-scoring --output-dir outputs/eval_sft_val
+```
+
+4) GRPO
+
+```bash
+$PY mera/scripts/grpo.py mathlogicqa --trainer-gpu-ids "[1]" --inference-gpu-ids "[0]" --trainer.model.name outputs/sft/merged --orchestrator.model.name outputs/sft/merged --inference.model.name outputs/sft/merged
+```
+
+5) Post-GRPO eval
+
+```bash
+$PY mera/scripts/eval.py --model outputs/grpo_prime/mathlogicqa/weights/step_<N> --task-set benchmark --tensor-parallel 2 --output-dir outputs/eval_post
+```
+
+## Script notes
+
+- `mera/scripts/sft.py`
+  - defaults to fair task preset
+  - supports merged checkpoint export via `--save-merged`
+- `mera/scripts/grpo.py`
+  - enforces fair splits by default
+  - supports explicit override via `--allow-test-split`
+- `mera/scripts/eval.py` / `mera/scripts/eval_base.py`
+  - support task presets via `--task-set {all,benchmark,validation}`
+  - support custom subsets via `--tasks ...`
