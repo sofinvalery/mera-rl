@@ -39,6 +39,8 @@ source env.sh
 PY=_deps/prime-rl/.venv/bin/python
 ```
 
+Default base model across scripts/configs: `Qwen/Qwen3-4B-Instruct-2507`.
+
 ## Fair split policy
 
 Default GRPO behavior is strict fair mode:
@@ -67,25 +69,28 @@ $PY mera/scripts/eval.py --model <base_model> --tensor-parallel 2 --output-dir o
 2) SFT
 
 ```bash
-$PY mera/scripts/sft.py --model <base_model> --task-set fair --epochs 1 --batch-size 1 --grad-accum 16 --save-merged --output-dir outputs/sft
+$PY mera/scripts/sft.py --model <base_model> --task-set fair --epochs 1 --batch-size 4 --grad-accum 2 --nproc-per-node 2 --output-dir outputs/sft
 ```
+
+Prime-RL SFT writes checkpoints to `outputs/sft/weights/step_<N>` and also creates `outputs/sft/latest`.
+LoRA in SFT is opt-in via `--use-lora` (default is full-parameter SFT).
 
 3) Intermediate eval after SFT (recommended)
 
 ```bash
-$PY mera/scripts/eval.py --model outputs/sft/merged --task-set benchmark --tensor-parallel 2 --output-dir outputs/eval_sft
+$PY mera/scripts/eval.py --model outputs/sft/latest --task-set benchmark --tensor-parallel 2 --output-dir outputs/eval_sft
 ```
 
 For a fast proxy eval on validation-only subset:
 
 ```bash
-$PY mera/scripts/eval_base.py --model outputs/sft/merged --task-set validation --tasks parus rcb rwsd use --split validation --skip-scoring --output-dir outputs/eval_sft_val
+$PY mera/scripts/eval_base.py --model outputs/sft/latest --task-set validation --tasks parus rcb rwsd use --split validation --skip-scoring --output-dir outputs/eval_sft_val
 ```
 
 4) GRPO
 
 ```bash
-$PY mera/scripts/grpo.py mathlogicqa --trainer-gpu-ids "[1]" --inference-gpu-ids "[0]" --trainer.model.name outputs/sft/merged --orchestrator.model.name outputs/sft/merged --inference.model.name outputs/sft/merged
+$PY mera/scripts/grpo.py mathlogicqa --trainer-gpu-ids "[1]" --inference-gpu-ids "[0]" --trainer.model.name outputs/sft/latest --orchestrator.model.name outputs/sft/latest --inference.model.name outputs/sft/latest
 ```
 
 5) Post-GRPO eval
@@ -98,7 +103,8 @@ $PY mera/scripts/eval.py --model outputs/grpo_prime/mathlogicqa/weights/step_<N>
 
 - `mera/scripts/sft.py`
   - defaults to fair task preset
-  - supports merged checkpoint export via `--save-merged`
+  - uses Prime-RL native SFT trainer
+  - exports checkpoints to `<output_dir>/weights/step_<N>` and updates `<output_dir>/latest`
 - `mera/scripts/grpo.py`
   - enforces fair splits by default
   - supports explicit override via `--allow-test-split`

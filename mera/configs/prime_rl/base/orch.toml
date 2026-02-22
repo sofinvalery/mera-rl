@@ -4,7 +4,7 @@ rollouts_per_example = 4
 seq_len = 4096
 
 [model]
-name = "Qwen/Qwen3-4B-Thinking-2507"
+name = "Qwen/Qwen3-4B-Instruct-2507"
 
 [model.lora]
 rank = 16

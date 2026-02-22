@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 os.environ.setdefault("TRANSFORMERS_NO_TORCHVISION", "1")
 import re
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
+import torch
 from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
 from tqdm import tqdm
@@ -320,9 +323,121 @@ def run_scoring(zip_path: Path, results_path: Path) -> Dict[str, Any]:
         os.chdir(cwd)
 
 
+def cleanup_llm(llm: LLM | None) -> None:
+    if llm is None:
+        return
+    llm_engine = getattr(llm, "llm_engine", None)
+    engine_core = getattr(llm_engine, "engine_core", None)
+    shutdown = getattr(engine_core, "shutdown", None)
+    if callable(shutdown):
+        try:
+            shutdown()
+        except Exception as exc:  # pragma: no cover - best effort cleanup
+            print(f"Warning: failed to shutdown vLLM engine core cleanly: {exc}", file=sys.stderr)
+    del llm
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        try:
+            torch.distributed.destroy_process_group()
+        except Exception as exc:  # pragma: no cover - best effort cleanup
+            print(f"Warning: failed to destroy process group cleanly: {exc}", file=sys.stderr)
+
+
+def _dir_size_bytes(path: Path) -> int:
+    total = 0
+    for item in path.rglob("*"):
+        if item.is_file():
+            try:
+                total += item.stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def _collect_prime_rl_run_dirs(model: str) -> list[Path]:
+    model_path = Path(model).expanduser()
+    if not model_path.exists():
+        return []
+
+    candidates: list[Path] = [model_path]
+    try:
+        resolved = model_path.resolve()
+    except OSError:
+        resolved = model_path
+    if resolved != model_path:
+        candidates.append(resolved)
+
+    run_dirs: list[Path] = []
+    for base in candidates:
+        for probe in [base, *list(base.parents[:6])]:
+            if (probe / "weights").is_dir() or (probe / "checkpoints").is_dir():
+                run_dirs.append(probe)
+
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for run_dir in run_dirs:
+        if run_dir in seen:
+            continue
+        seen.add(run_dir)
+        deduped.append(run_dir)
+    return deduped
+
+
+def cleanup_incomplete_prime_rl_checkpoints(model: str, grace_seconds: int) -> None:
+    now = time.time()
+    for run_dir in _collect_prime_rl_run_dirs(model):
+        removed = 0
+        reclaimed_bytes = 0
+        weights_dir = run_dir / "weights"
+        stable_weight_steps: set[str] = set()
+        if weights_dir.is_dir():
+            for step_dir in sorted(weights_dir.glob("step_*")):
+                if not step_dir.is_dir():
+                    continue
+                if (step_dir / "STABLE").exists():
+                    stable_weight_steps.add(step_dir.name)
+                    continue
+                try:
+                    age_seconds = max(0.0, now - step_dir.stat().st_mtime)
+                except OSError:
+                    continue
+                if age_seconds < grace_seconds:
+                    continue
+                reclaimed_bytes += _dir_size_bytes(step_dir)
+                shutil.rmtree(step_dir, ignore_errors=True)
+                removed += 1
+
+        ckpt_dir = run_dir / "checkpoints"
+        if ckpt_dir.is_dir():
+            for step_dir in sorted(ckpt_dir.glob("step_*")):
+                if not step_dir.is_dir():
+                    continue
+                if step_dir.name in stable_weight_steps:
+                    continue
+                try:
+                    age_seconds = max(0.0, now - step_dir.stat().st_mtime)
+                except OSError:
+                    continue
+                if age_seconds < grace_seconds:
+                    continue
+                reclaimed_bytes += _dir_size_bytes(step_dir)
+                shutil.rmtree(step_dir, ignore_errors=True)
+                removed += 1
+
+        if removed:
+            reclaimed_gib = reclaimed_bytes / (1024 ** 3)
+            print(
+                f"Cleanup guard removed {removed} stale checkpoint directories "
+                f"({reclaimed_gib:.2f} GiB) under {run_dir}",
+                file=sys.stderr,
+            )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="Qwen/Qwen3-4B-Thinking-2507")
+    parser.add_argument("--model", default="Qwen/Qwen3-4B-Instruct-2507")
     parser.add_argument("--data-dir", default=None)
     parser.add_argument("--output-dir", default="outputs/eval")
     parser.add_argument("--split", default="test")
@@ -331,6 +446,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tensor-parallel", type=int, default=2)
     parser.add_argument("--max-model-len", type=int, default=4096)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
+    parser.add_argument(
+        "--checkpoint-cleanup-grace-seconds",
+        type=int,
+        default=0,
+        help="Remove incomplete local Prime-RL step dirs older than this age before eval.",
+    )
+    parser.add_argument(
+        "--skip-checkpoint-cleanup",
+        action="store_true",
+        help="Disable pre-eval cleanup guard for incomplete Prime-RL checkpoints.",
+    )
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")
     parser.add_argument("--wandb-project", default=None)
@@ -373,6 +499,12 @@ def main() -> None:
     output_dir = Path(args.output_dir).resolve()
     eval_tasks = resolve_eval_tasks(args.task_set, args.tasks)
 
+    if not args.skip_checkpoint_cleanup:
+        cleanup_incomplete_prime_rl_checkpoints(
+            model=args.model,
+            grace_seconds=max(0, args.checkpoint_cleanup_grace_seconds),
+        )
+
     wandb_run = None
     if args.wandb:
         import wandb
@@ -388,29 +520,31 @@ def main() -> None:
         )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-    llm = LLM(
-        model=args.model,
-        tensor_parallel_size=args.tensor_parallel,
-        trust_remote_code=True,
-        max_model_len=args.max_model_len,
-        gpu_memory_utilization=args.gpu_memory_utilization,
-        enforce_eager=args.enforce_eager,
-    )
-
-    task_outputs = {}
-    for task in tqdm(eval_tasks, desc="eval tasks", unit="task"):
-        task_outputs[task] = run_task(
-            task,
-            llm,
-            tokenizer,
-            args.split,
-            args.data_dir,
-            args.limit,
-            args.temperature,
-            args.max_model_len,
+    llm: LLM | None = None
+    try:
+        llm = LLM(
+            model=args.model,
+            tensor_parallel_size=args.tensor_parallel,
+            trust_remote_code=True,
+            max_model_len=args.max_model_len,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            enforce_eager=args.enforce_eager,
         )
-
-    zip_path = build_submission_files(output_dir, args.split, task_outputs)
+        task_outputs = {}
+        for task in tqdm(eval_tasks, desc="eval tasks", unit="task"):
+            task_outputs[task] = run_task(
+                task,
+                llm,
+                tokenizer,
+                args.split,
+                args.data_dir,
+                args.limit,
+                args.temperature,
+                args.max_model_len,
+            )
+        zip_path = build_submission_files(output_dir, args.split, task_outputs)
+    finally:
+        cleanup_llm(llm)
     if args.skip_scoring:
         print(f"Skipping scoring. Submission at {zip_path}")
         if wandb_run is not None:

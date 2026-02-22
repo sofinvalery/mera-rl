@@ -11,7 +11,7 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="Qwen/Qwen3-4B-Thinking-2507")
+    parser.add_argument("--model", default="Qwen/Qwen3-4B-Instruct-2507")
     parser.add_argument("--data-dir", default=None)
     parser.add_argument("--output-dir", default="outputs/eval_base")
     parser.add_argument("--split", default="test")

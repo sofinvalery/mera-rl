@@ -1,0 +1,47 @@
+# Prime-RL SFT baseline config template for MERA.
+# The wrapper `mera/scripts/sft.py` generates a run-specific TOML from CLI args.
+
+max_steps = 500
+output_dir = "outputs/sft"
+
+[model]
+name = "Qwen/Qwen3-4B-Instruct-2507"
+seq_len = 1536
+trust_remote_code = true
+optimization_dtype = "bfloat16"
+reduce_dtype = "bfloat16"
+
+[data]
+type = "sft"
+name = "outputs/sft/dataset"
+seq_len = 1536
+batch_size = 16
+micro_batch_size = 1
+pack_function = "cat"
+shuffle = true
+seed = 42
+
+[data.loss_mask]
+system = false
+user = false
+assistant = true
+tool = false
+
+[optim]
+type = "adamw"
+lr = 1e-5
+weight_decay = 0.0
+max_norm = 1.0
+
+[scheduler]
+type = "cosine"
+warmup_steps = 10
+min_lr = 0.0
+
+[ckpt]
+interval = 200
+
+[ckpt.weights]
+save_sharded = true
+save_format = "safetensors"
+save_adapter_separately = false

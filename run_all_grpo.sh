@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="/workspace/rl/mera-rl"
+REPO_DIR="/workspace/mera-rl"
 PY="$REPO_DIR/_deps/prime-rl/.venv/bin/python"
-BASE_MODEL="${1:-$REPO_DIR/outputs/full_01_sft/merged}"
+BASE_MODEL="${1:-$REPO_DIR/outputs/full_01_sft_prime_bs4x2_ga2_len1536/latest}"
+ORCH_BATCH_SIZE="${ORCH_BATCH_SIZE:-32}"
+ORCH_ROLLOUTS="${ORCH_ROLLOUTS:-8}"
+ORCH_MAX_STEPS="${ORCH_MAX_STEPS:-400}"
+MAX_TOKENS="${MAX_TOKENS:-192}"
 
 # Full task set supported by mera/scripts/grpo.py
 TASKS=(
@@ -25,7 +29,7 @@ TASKS=(
 )
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
-RUN_ROOT="$REPO_DIR/outputs/grpo_all_${STAMP}"
+RUN_ROOT="${RUN_ROOT:-$REPO_DIR/outputs/grpo_all_${STAMP}}"
 LOG_DIR="$RUN_ROOT/logs"
 mkdir -p "$LOG_DIR"
 
@@ -47,9 +51,14 @@ fi
 cd "$REPO_DIR"
 source "$REPO_DIR/env.sh"
 export CUDA_VISIBLE_DEVICES=0,1
+export TOKENIZERS_PARALLELISM=false
 
 echo "BASE_MODEL=$BASE_MODEL"
 echo "RUN_ROOT=$RUN_ROOT"
+echo "ORCH_BATCH_SIZE=$ORCH_BATCH_SIZE"
+echo "ORCH_ROLLOUTS=$ORCH_ROLLOUTS"
+echo "ORCH_MAX_STEPS=$ORCH_MAX_STEPS"
+echo "MAX_TOKENS=$MAX_TOKENS"
 
 for TASK in "${TASKS[@]}"; do
   OUT_DIR="$RUN_ROOT/$TASK"
@@ -69,10 +78,10 @@ for TASK in "${TASKS[@]}"; do
     --trainer.model.name "$BASE_MODEL" \
     --orchestrator.model.name "$BASE_MODEL" \
     --inference.model.name "$BASE_MODEL" \
-    --orchestrator.batch_size 16 \
-    --orchestrator.rollouts_per_example 8 \
-    --orchestrator.max_steps 400 \
-    --sampling.max_tokens 192 \
+    --orchestrator.batch-size "$ORCH_BATCH_SIZE" \
+    --orchestrator.rollouts-per-example "$ORCH_ROLLOUTS" \
+    --orchestrator.max-steps "$ORCH_MAX_STEPS" \
+    --orchestrator.sampling.max-tokens "$MAX_TOKENS" \
     --output-dir "$OUT_DIR" \
     "${EXTRA_ARGS[@]}" \
     2>&1 | tee "$LOG_FILE"

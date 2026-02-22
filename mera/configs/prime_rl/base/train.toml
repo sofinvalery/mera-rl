@@ -1,7 +1,7 @@
 max_steps = 200
 
 [model]
-name = "Qwen/Qwen3-4B-Thinking-2507"
+name = "Qwen/Qwen3-4B-Instruct-2507"
 seq_len = 4096
 trust_remote_code = true
 
