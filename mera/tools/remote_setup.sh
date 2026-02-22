@@ -159,6 +159,8 @@ if [[ -d "$PRIME_RL_DIR" ]]; then
 
   PRIME_PY="$PRIME_RL_DIR/.venv/bin/python"
   uv pip install --python "$PRIME_PY" trl peft
+  # Install scoring runtime deps with Py3.12-compatible versions.
+  uv pip install --python "$PRIME_PY" omegaconf boto3 scikit-learn
 
   ENV_PACKAGES=(
     chegeka

@@ -103,6 +103,9 @@ TASK_MAX_TOKENS = {
     "rucodeeval": 256,
 }
 
+RUTIE_MAX_TOKENS = 4
+RUTIE_TRUNCATION_SAFETY_TOKENS = 8
+
 
 def parse_choice(task: str, completion: str, answer: Any) -> str:
     if task in mera_common.TASK_SPECS:
@@ -191,16 +194,26 @@ def run_task(
 
 
 
-def _truncate_rutie_context(tokenizer, max_model_len, instruction, inputs, context_parts):
+def _truncate_rutie_context(
+    tokenizer,
+    max_model_len,
+    instruction,
+    inputs,
+    context_parts,
+    output_token_reserve: int,
+):
     if max_model_len is None:
         context = "\n\n".join(context_parts)
         prompt = mera_common.format_prompt(instruction, inputs, context=context)
         return prompt, build_prompt(tokenizer, prompt), context_parts
+
+    prompt_token_limit = max(1, max_model_len - max(1, output_token_reserve))
     while True:
         context = "\n\n".join(context_parts)
         prompt = mera_common.format_prompt(instruction, inputs, context=context)
         formatted = build_prompt(tokenizer, prompt)
-        if len(tokenizer.encode(formatted)) <= max_model_len:
+        token_count = len(tokenizer.encode(formatted, add_special_tokens=False))
+        if token_count <= prompt_token_limit:
             return prompt, formatted, context_parts
         if not context_parts:
             return prompt, formatted, context_parts
@@ -213,6 +226,7 @@ def run_rutie(
     temperature: float,
     max_model_len: int | None,
 ) -> List[Dict[str, Any]]:
+    rutie_output_token_reserve = RUTIE_MAX_TOKENS + RUTIE_TRUNCATION_SAFETY_TOKENS
     dialogs: Dict[int, List[Dict[str, Any]]] = {}
     for rec in records:
         dialog_id = int(rec["meta"]["dialog_id"])
@@ -228,8 +242,24 @@ def run_rutie(
                 rec["instruction"],
                 rec["inputs"],
                 context_parts,
+                rutie_output_token_reserve,
             )
-            completion = generate_batch(llm, [formatted], 8, temperature)[0]
+            while True:
+                try:
+                    completion = generate_batch(llm, [formatted], RUTIE_MAX_TOKENS, temperature)[0]
+                    break
+                except ValueError as exc:
+                    if "maximum model length" not in str(exc) or not context_parts:
+                        raise
+                    context_parts.pop(0)
+                    prompt, formatted, context_parts = _truncate_rutie_context(
+                        tokenizer,
+                        max_model_len,
+                        rec["instruction"],
+                        rec["inputs"],
+                        context_parts,
+                        rutie_output_token_reserve,
+                    )
             parsed = mera_common.Choice12Parser().parse(completion) or ""
             outputs.append(build_submission_entry(parsed, rec["meta"]))
             choice1 = str(rec["inputs"]["choice1"])
@@ -262,6 +292,17 @@ def run_scoring(zip_path: Path, results_path: Path) -> Dict[str, Any]:
     scoring_root = mera_common.resolve_mera_repo_root() / "modules" / "scoring"
     zip_path = Path(zip_path).resolve()
     results_path = Path(results_path).resolve()
+    active_python = Path(sys.executable)
+    missing_dep_help = (
+        f"Missing scoring dependency 'omegaconf' in interpreter {active_python}. "
+        "Install scoring deps with: "
+        f"uv pip install --python {active_python} omegaconf boto3 scikit-learn"
+    )
+    try:
+        import omegaconf  # noqa: F401
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(missing_dep_help) from exc
+
     sys.path.insert(0, str(scoring_root))
     from src.worker import Worker
     from src.utils import save_json
