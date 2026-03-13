@@ -1,0 +1,66 @@
+default_model = "Qwen/Qwen3-4B-Instruct-2507"
+default_batch_size = 32
+default_rollouts_per_example = 8
+default_max_steps = 400
+default_max_tokens = 192
+default_learning_rate = 1e-6
+default_lora_alpha = 32
+default_checkpoint_interval = 100
+default_checkpoint_keep_cloud = 5
+
+[task.bps]
+split = "train"
+
+[task.chegeka]
+split = "train"
+
+[task.lcs]
+split = "public_test"
+
+[task.mamuramu]
+split = "train"
+
+[task.mathlogicqa]
+split = "train"
+
+[task.multiq]
+split = "train"
+
+[task.parus]
+split = "train"
+
+[task.rcb]
+split = "train"
+
+[task.rucodeeval]
+split = "test"
+
+[task.rudetox]
+split = "train"
+
+[task.rummlu]
+split = "train"
+
+[task.rumodar]
+split = "public_test"
+
+[task.rumultiar]
+split = "train"
+
+[task.ruopenbookqa]
+split = "train"
+
+[task.rutie]
+split = "train"
+
+[task.ruworldtree]
+split = "train"
+
+[task.rwsd]
+split = "train"
+
+[task.simplear]
+split = "train"
+
+[task.use]
+split = "train"

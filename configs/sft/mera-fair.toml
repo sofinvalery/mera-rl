@@ -1,0 +1,61 @@
+max_steps = 100
+
+[ckpt]
+interval = 200
+
+[ckpt.weights]
+save_sharded = true
+save_format = "safetensors"
+save_adapter_separately = true
+
+[model]
+name = "Qwen/Qwen3-4B-Instruct-2507"
+seq_len = 1536
+trust_remote_code = true
+optimization_dtype = "bfloat16"
+reduce_dtype = "bfloat16"
+
+[model.lora]
+rank = 16
+alpha = 32
+dropout = 0.05
+target_modules = [
+  "q_proj",
+  "k_proj",
+  "v_proj",
+  "o_proj",
+  "gate_proj",
+  "up_proj",
+  "down_proj",
+]
+
+[data]
+type = "sft"
+name = "__MERASFT_DATASET__"
+seq_len = 1536
+batch_size = 16
+micro-batch-size = 1
+pack_function = "cat"
+shuffle = true
+seed = 42
+
+[data.loss_mask]
+system = false
+user = false
+assistant = true
+tool = false
+
+[optim]
+type = "adamw"
+lr = 1e-5
+weight_decay = 0.0
+max_norm = 1.0
+
+[scheduler]
+type = "cosine"
+warmup_steps = 10
+min_lr = 0.0
+
+[log]
+level = "info"
+file = true

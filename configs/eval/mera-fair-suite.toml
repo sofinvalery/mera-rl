@@ -1,0 +1,71 @@
+save_results = true
+
+[[eval]]
+env_id = "chegeka"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "lcs"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "mamuramu"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "mathlogicqa"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "multiq"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "parus"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "rcb"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "rumodar"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "rumultiar"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "ruopenbookqa"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "rutie"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "ruworldtree"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "rwsd"
+num_examples = 100
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "use"
+num_examples = 100
+rollouts_per_example = 1

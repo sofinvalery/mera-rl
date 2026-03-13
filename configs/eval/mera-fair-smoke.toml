@@ -1,0 +1,21 @@
+save_results = true
+
+[[eval]]
+env_id = "parus"
+num_examples = 5
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "rcb"
+num_examples = 5
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "rwsd"
+num_examples = 5
+rollouts_per_example = 1
+
+[[eval]]
+env_id = "use"
+num_examples = 5
+rollouts_per_example = 1
