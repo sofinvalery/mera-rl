@@ -9,9 +9,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from prime_lab_rl.constants import DEFAULT_BASE_MODEL
+from prime_lab_rl.constants import DEFAULT_BASE_MODEL, DEFAULT_SFT_MAX_SEQ_LEN
 from prime_lab_rl.manifest import ensure_manifest, update_manifest
-from prime_lab_rl.sft_dataset import prepare_sft_dataset_artifacts, resolve_sft_tasks
+from prime_lab_rl.sft_dataset import (
+    RUTIE_CONTEXT_MODES,
+    prepare_sft_dataset_artifacts,
+    resolve_sft_tasks,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,6 +26,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tasks", nargs="+", default=None, help="Explicit task subset.")
     parser.add_argument("--limit", type=int, default=None, help="Optional per-task example cap.")
     parser.add_argument("--model", default=DEFAULT_BASE_MODEL, help="Base model identifier recorded in the dataset manifest.")
+    parser.add_argument("--max-seq-len", type=int, default=DEFAULT_SFT_MAX_SEQ_LEN)
+    parser.add_argument("--drop-overlength", action="store_true", default=True)
+    parser.add_argument("--no-drop-overlength", action="store_false", dest="drop_overlength")
+    parser.add_argument("--rutie-context-mode", choices=RUTIE_CONTEXT_MODES, default="single_turn")
     parser.add_argument("--experiment", default="manual", help="Experiment name for manifest bookkeeping.")
     parser.add_argument("--manifest", type=Path, default=None, help="Optional pipeline manifest to update.")
     return parser.parse_args()
@@ -37,6 +45,9 @@ def main() -> None:
         tasks=tasks,
         limit=args.limit,
         base_model=args.model,
+        max_seq_len=args.max_seq_len,
+        drop_overlength=args.drop_overlength,
+        rutie_context_mode=args.rutie_context_mode,
     )
 
     if args.manifest is not None:
@@ -53,6 +64,10 @@ def main() -> None:
                         "num_rows": artifacts.num_rows,
                         "tasks": tasks,
                         "limit": args.limit,
+                        "max_seq_len": args.max_seq_len,
+                        "drop_overlength": args.drop_overlength,
+                        "rutie_context_mode": args.rutie_context_mode,
+                        "stats": artifacts.dataset_stats,
                     }
                 }
             },
@@ -62,6 +77,12 @@ def main() -> None:
     print(f"train_path={artifacts.train_path}")
     print(f"manifest_path={artifacts.manifest_path}")
     print(f"num_rows={artifacts.num_rows}")
+    print(f"max_seq_len={args.max_seq_len}")
+    print(f"drop_overlength={args.drop_overlength}")
+    print(f"rutie_context_mode={args.rutie_context_mode}")
+    print(f"dropped_overlength={artifacts.dataset_stats['dropped_overlength']}")
+    print(f"zero_trainable_before_filter={artifacts.dataset_stats['zero_trainable_before_filter']}")
+    print(f"zero_trainable_after_filter={artifacts.dataset_stats['zero_trainable_after_filter']}")
 
 
 if __name__ == "__main__":

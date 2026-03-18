@@ -92,28 +92,6 @@ SMOKE_EVAL_TASKS = [
     "use",
 ]
 
-HF_TASKS = [
-    "bps",
-    "chegeka",
-    "lcs",
-    "mamuramu",
-    "mathlogicqa",
-    "multiq",
-    "parus",
-    "rcb",
-    "rucodeeval",
-    "rudetox",
-    "rummlu",
-    "rumodar",
-    "rumultiar",
-    "ruopenbookqa",
-    "rutie",
-    "ruworldtree",
-    "rwsd",
-    "simplear",
-    "use",
-]
-
 SFT_LORA_TARGET_MODULES = [
     "q_proj",
     "k_proj",

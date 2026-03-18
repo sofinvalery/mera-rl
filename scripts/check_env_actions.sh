@@ -38,7 +38,6 @@ if [[ $# -gt 0 ]]; then
   TASKS=("$@")
 else
   TASKS=(
-    bps
     chegeka
     lcs
     mamuramu
@@ -46,16 +45,12 @@ else
     multiq
     parus
     rcb
-    rucodeeval
-    rudetox
-    rummlu
     rumodar
     rumultiar
     ruopenbookqa
     rutie
     ruworldtree
     rwsd
-    simplear
     use
   )
 fi

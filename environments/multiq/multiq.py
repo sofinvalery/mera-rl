@@ -118,10 +118,10 @@ def load_environment(
 
     parser = vf.MaybeThinkParser(lambda x: x.strip())
 
-    def reward_fn(parser_obj: vf.Parser, completion: vf.Messages, answer: Any, **_kw: Any) -> float:
+    def reward_fn(parser: vf.Parser, completion: vf.Messages, answer: Any, **_kw: Any) -> float:
         if answer is None or (isinstance(answer, str) and not answer.strip()):
             return 0.0
-        pred = (parser_obj.parse_answer(completion) or "").strip()
+        pred = (parser.parse_answer(completion) or "").strip()
         if not pred:
             return 0.0
         golds = _split_answers(str(answer))

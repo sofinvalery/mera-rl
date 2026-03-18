@@ -5,7 +5,7 @@ description = "Hosted Prime RL workspace for MERA environments"
 requires-python = ">=3.11"
 dependencies = [
     "datasets>=4.0.0",
-    "huggingface-hub>=0.34.0",
+    "huggingface-hub[cli]>=0.34.0",
     "peft>=0.17.0",
     "transformers>=4.57.0",
     "wandb>=0.20.0",

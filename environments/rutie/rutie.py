@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import string
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import verifiers as vf
 from datasets import Dataset, load_dataset
@@ -53,8 +53,8 @@ def _group_dialogs(records: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
 
 
 def _extract_12(text: str) -> str:
-    match = re.search(r"\b([12])\b", text.strip())
-    return match.group(1) if match else ""
+    matches = re.findall(r"\b([12])\b", text.strip())
+    return matches[-1] if matches else ""
 
 
 def _first_prompt_messages(prompt: str, system_prompt: Optional[str] = None) -> vf.Messages:
@@ -67,16 +67,23 @@ def _first_prompt_messages(prompt: str, system_prompt: Optional[str] = None) -> 
 
 class RuTiEEnv(vf.MultiTurnEnv):
     def __init__(self, dialogs: List[List[Dict[str, Any]]], system_prompt: str | None = None, **kwargs):
-        ds = Dataset.from_list([{"prompt": [], "dialog": dialog} for dialog in dialogs])
+        ds = Dataset.from_list([{"prompt": [], "info": {"dialog": dialog}} for dialog in dialogs])
         super().__init__(dataset=ds, eval_dataset=ds, system_prompt=system_prompt, **kwargs)
         self._parser = vf.MaybeThinkParser(_extract_12)
 
     async def setup_state(self, state: vf.State, **_kwargs: Any) -> vf.State:
-        dialog = state["dialog"]
+        info_obj = state.get("info", {})
+        dialog_val = info_obj.get("dialog") if isinstance(info_obj, dict) else None
+        dialog = dialog_val if isinstance(dialog_val, list) else []
+        state["dialog"] = dialog
         state["turn_index"] = 0
         state["correct"] = 0
         state["total"] = len(dialog)
         state["context"] = ""
+
+        if not dialog:
+            state["prompt"] = []
+            return state
 
         first = dialog[0]
         prompt = format_prompt(first["instruction"], first["inputs"], context="")
@@ -85,12 +92,18 @@ class RuTiEEnv(vf.MultiTurnEnv):
 
     async def env_response(
         self, messages: vf.Messages, state: vf.State, **_kwargs: Any
-    ) -> Tuple[vf.Messages, vf.State]:
+    ) -> vf.Messages:
         if not messages or messages[-1]["role"] != "assistant":
-            return [], state
+            return []
 
-        dialog: List[Dict[str, Any]] = state["dialog"]
-        idx = int(state["turn_index"])
+        dialog: List[Dict[str, Any]] = state.get("dialog", [])
+        if not dialog:
+            return []
+
+        idx = int(state.get("turn_index", 0))
+        if idx >= len(dialog):
+            state["turn_index"] = len(dialog)
+            return []
         current = dialog[idx]
 
         parsed = self._parser.parse_answer(messages) or ""
@@ -110,19 +123,20 @@ class RuTiEEnv(vf.MultiTurnEnv):
 
         context = str(state.get("context", ""))
         context += (
-            f"{question}\n1. {choice1}\n2. {choice2}\n\u041e\u0442\u0432\u0435\u0442: {answer_text}\n\n"
+            f"{question}\n1. {choice1}\n2. {choice2}\nAnswer: {answer_text}\n\n"
         )
         state["context"] = context
         state["turn_index"] = idx + 1
 
-        if state["turn_index"] >= state["total"]:
-            return [], state
+        if state["turn_index"] >= len(dialog):
+            return []
 
         nxt = dialog[state["turn_index"]]
         prompt = format_prompt(nxt["instruction"], nxt["inputs"], context=context)
-        return [{"role": "user", "content": prompt}], state
+        return [{"role": "user", "content": prompt}]
 
-    async def is_completed(self, state: vf.State, **_kwargs: Any) -> bool:
+    @vf.stop
+    async def dialog_finished(self, state: vf.State, **_kwargs: Any) -> bool:
         return int(state.get("turn_index", 0)) >= int(state.get("total", 0))
 
 
@@ -131,6 +145,7 @@ def load_environment(
     system_prompt: str | None = None,
     cache_dir: str | None = None,
     max_eval_examples: int | None = None,
+    max_turns: int = 32,
     **_kwargs: Any,
 ) -> vf.Environment:
     records_ds = load_dataset(DATASET_ID, TASK_ID, split=split, cache_dir=cache_dir)
@@ -147,4 +162,9 @@ def load_environment(
     rubric = vf.Rubric()
     rubric.add_reward_func(reward_fn)
 
-    return RuTiEEnv(dialogs=dialogs, system_prompt=system_prompt, rubric=rubric)
+    return RuTiEEnv(
+        dialogs=dialogs,
+        system_prompt=system_prompt,
+        max_turns=max_turns,
+        rubric=rubric,
+    )

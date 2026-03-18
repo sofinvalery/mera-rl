@@ -13,6 +13,18 @@ if str(REPO_ROOT) not in sys.path:
 from prime_lab_rl.sft_dataset import prepare_sft_dataset_artifacts
 
 
+class _FakeTokenizer:
+    eos_token_id = -1
+
+    def apply_chat_template(self, messages, add_generation_prompt: bool = False, return_dict: bool = False):
+        del add_generation_prompt, return_dict
+        token_count = 0
+        for message in messages:
+            content = str(message.get("content", "")).strip()
+            token_count += max(1, len(content.split())) if content else 1
+        return list(range(token_count))
+
+
 def test_prepare_sft_dataset_artifacts(tmp_path: Path, monkeypatch) -> None:
     data_root = tmp_path / "mera-data"
     task_dir = data_root / "chegeka"
@@ -26,6 +38,7 @@ def test_prepare_sft_dataset_artifacts(tmp_path: Path, monkeypatch) -> None:
     (task_dir / "train.jsonl").write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
 
     monkeypatch.setenv("MERA_DATA_DIR", str(data_root))
+    monkeypatch.setattr("prime_lab_rl.sft_dataset._load_tokenizer", lambda _: _FakeTokenizer())
     artifacts = prepare_sft_dataset_artifacts(
         output_dir=tmp_path / "out",
         data_dir=None,
@@ -44,6 +57,125 @@ def test_prepare_sft_dataset_artifacts(tmp_path: Path, monkeypatch) -> None:
     manifest = json.loads(artifacts.manifest_path.read_text(encoding="utf-8"))
     assert manifest["tasks"] == ["chegeka"]
     assert manifest["task_splits"] == {"chegeka": "train"}
+    assert manifest["dataset_stats"]["raw_rows"] == 1
+    assert manifest["dataset_stats"]["kept_rows"] == 1
+
+
+def test_prepare_sft_dataset_artifacts_rutie_defaults_to_single_turn(tmp_path: Path, monkeypatch) -> None:
+    data_root = tmp_path / "mera-data"
+    task_dir = data_root / "rutie"
+    task_dir.mkdir(parents=True)
+    records = [
+        {
+            "instruction": "CTX:{context}\nQ:{question}",
+            "inputs": {"question": "Сколько ног у человека?", "choice1": "Две", "choice2": "Четыре"},
+            "outputs": "1",
+            "meta": {"dialog_id": 0, "question_id": 1},
+        },
+        {
+            "instruction": "CTX:{context}\nQ:{question}",
+            "inputs": {"question": "Сколько ног у муравья?", "choice1": "Две", "choice2": "Шесть"},
+            "outputs": "2",
+            "meta": {"dialog_id": 0, "question_id": 2},
+        },
+    ]
+    (task_dir / "train.jsonl").write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MERA_DATA_DIR", str(data_root))
+    monkeypatch.setattr("prime_lab_rl.sft_dataset._load_tokenizer", lambda _: _FakeTokenizer())
+    artifacts = prepare_sft_dataset_artifacts(
+        output_dir=tmp_path / "out",
+        data_dir=None,
+        tasks=["rutie"],
+        limit=None,
+        base_model="Qwen/Qwen3-4B-Instruct-2507",
+    )
+
+    rows = [json.loads(line) for line in artifacts.train_path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(rows) == 2
+    assert "Ответ:" not in rows[1]["prompt"][0]["content"]
+
+
+def test_prepare_sft_dataset_artifacts_rutie_rolling_mode(tmp_path: Path, monkeypatch) -> None:
+    data_root = tmp_path / "mera-data"
+    task_dir = data_root / "rutie"
+    task_dir.mkdir(parents=True)
+    records = [
+        {
+            "instruction": "CTX:{context}\nQ:{question}",
+            "inputs": {"question": "Сколько ног у человека?", "choice1": "Две", "choice2": "Четыре"},
+            "outputs": "1",
+            "meta": {"dialog_id": 0, "question_id": 1},
+        },
+        {
+            "instruction": "CTX:{context}\nQ:{question}",
+            "inputs": {"question": "Сколько ног у муравья?", "choice1": "Две", "choice2": "Шесть"},
+            "outputs": "2",
+            "meta": {"dialog_id": 0, "question_id": 2},
+        },
+    ]
+    (task_dir / "train.jsonl").write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MERA_DATA_DIR", str(data_root))
+    monkeypatch.setattr("prime_lab_rl.sft_dataset._load_tokenizer", lambda _: _FakeTokenizer())
+    artifacts = prepare_sft_dataset_artifacts(
+        output_dir=tmp_path / "out",
+        data_dir=None,
+        tasks=["rutie"],
+        limit=None,
+        base_model="Qwen/Qwen3-4B-Instruct-2507",
+        rutie_context_mode="rolling",
+    )
+
+    rows = [json.loads(line) for line in artifacts.train_path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(rows) == 2
+    assert "Ответ:" in rows[1]["prompt"][0]["content"]
+
+
+def test_prepare_sft_dataset_artifacts_drop_overlength(tmp_path: Path, monkeypatch) -> None:
+    data_root = tmp_path / "mera-data"
+    task_dir = data_root / "chegeka"
+    task_dir.mkdir(parents=True)
+    records = [
+        {
+            "instruction": "{text}",
+            "inputs": {"text": "короткий текст"},
+            "outputs": "ответ",
+            "meta": {"id": 1},
+        },
+        {
+            "instruction": "{text}",
+            "inputs": {"text": "очень " * 64 + "длинный текст"},
+            "outputs": "ответ",
+            "meta": {"id": 2},
+        },
+    ]
+    (task_dir / "train.jsonl").write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("MERA_DATA_DIR", str(data_root))
+    monkeypatch.setattr("prime_lab_rl.sft_dataset._load_tokenizer", lambda _: _FakeTokenizer())
+    artifacts = prepare_sft_dataset_artifacts(
+        output_dir=tmp_path / "out",
+        data_dir=None,
+        tasks=["chegeka"],
+        limit=None,
+        base_model="Qwen/Qwen3-4B-Instruct-2507",
+        max_seq_len=8,
+        drop_overlength=True,
+    )
+
+    rows = [json.loads(line) for line in artifacts.train_path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(rows) == 1
+    assert artifacts.dataset_stats["dropped_overlength"] == 1
+    assert artifacts.dataset_stats["zero_trainable_before_filter"] == 1
+    assert artifacts.dataset_stats["zero_trainable_after_filter"] == 0
 
 
 def test_render_eval_config_script(tmp_path: Path) -> None:
@@ -113,3 +245,28 @@ def test_render_hosted_config_supports_rl_extensions(tmp_path: Path) -> None:
     assert "keep_cloud = 3" in rendered
     assert "[eval]" in rendered
     assert "eval_base_model = true" in rendered
+
+
+def test_report_sft_metrics_script(tmp_path: Path) -> None:
+    log_path = tmp_path / "train.log"
+    log_path.write_text(
+        "\n".join(
+            [
+                "[default0]:12:00:00 SUCCESS Step 10 | Time: 40.00s | Loss: 1.2 | Grad. Norm: 5.0 | LR: 2.00e-05 | Throughput: 1200 tokens/s | MFU: 5.0% | Peak Mem.: 29/31 GiB",
+                "[default0]:12:00:40 SUCCESS Step 11 | Time: 38.00s | Loss: 1.1 | Grad. Norm: 4.8 | LR: 2.00e-05 | Throughput: 1300 tokens/s | MFU: 5.5% | Peak Mem.: 29/31 GiB",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "report_sft_metrics.py"),
+        "--log-file",
+        str(log_path),
+        "--gpu-peak-tflops",
+        "165",
+    ]
+    result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, capture_output=True, text=True)
+    assert "mfu_raw_pct_median=5.250" in result.stdout
+    assert "mfu_corrected_pct_median=" in result.stdout

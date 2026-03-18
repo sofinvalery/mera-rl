@@ -7,8 +7,6 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-FAIR_SPLITS = {"train", "public_test"}
-
 
 def _quote(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -74,11 +72,6 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Override sampling.max_tokens.",
-    )
-    parser.add_argument(
-        "--allow-nonfair",
-        action="store_true",
-        help="Allow task splits outside train/public_test.",
     )
     parser.add_argument(
         "--checkpoint-id",
@@ -233,10 +226,10 @@ def main() -> None:
         raise ValueError(f"Unknown task '{args.task}'. Known tasks: {known}")
 
     split = str(task_cfg.get("split", "train"))
-    if split not in FAIR_SPLITS and not args.allow_nonfair:
+    if split not in {"train", "public_test"}:
         raise ValueError(
-            f"Task '{args.task}' uses split '{split}' (non-fair). "
-            "Pass --allow-nonfair to proceed."
+            f"Task '{args.task}' uses unsupported split '{split}'. "
+            "Fair MERA hosted RL expects train/public_test only."
         )
 
     model = args.model or str(task_map.get("default_model", "Qwen/Qwen3-4B-Instruct-2507"))

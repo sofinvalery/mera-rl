@@ -60,7 +60,7 @@ def _build_dataset(split: str, cache_dir: Optional[str] = None) -> Dataset:
 def _extract_yes_no(text: str) -> str:
     normalized = re.sub(r"[^A-Za-z\u0400-\u04FF0-9]", " ", text, flags=re.UNICODE)
     tokens = [tok for tok in normalized.strip().upper().split() if tok]
-    for token in tokens:
+    for token in reversed(tokens):
         if token in _YES:
             return "YES"
         if token in _NO:
@@ -91,10 +91,10 @@ def load_environment(
 
     parser = vf.MaybeThinkParser(_extract_yes_no)
 
-    def reward_fn(parser_obj: vf.Parser, completion: vf.Messages, answer: Any, **_kw: Any) -> float:
+    def reward_fn(parser: vf.Parser, completion: vf.Messages, answer: Any, **_kw: Any) -> float:
         if answer is None or (isinstance(answer, str) and not answer.strip()):
             return 0.0
-        pred = parser_obj.parse_answer(completion) or ""
+        pred = parser.parse_answer(completion) or ""
         if not pred:
             return 0.0
         return 1.0 if _normalize_yes_no(pred) == _normalize_yes_no(answer) else 0.0

@@ -10,9 +10,11 @@ Runs a tiny MERA SFT smoke test on a small task subset.
 Environment overrides:
   EXPERIMENT            Experiment name. Default: mera_sft_test
   OUTPUT_DIR            Output directory. Default: outputs/runs/<experiment>/sft-test
+  MODEL                 Base model for smoke SFT. Default: Qwen/Qwen3-0.6B
   TASKS                 Space-separated tasks. Default: "chegeka mathlogicqa rcb"
   LIMIT                 Per-task example cap. Default: 16
   MAX_STEPS             Default: 8
+  SFT_CONFIG            SFT config file. Default: configs/sft/mera-smoke-no-lora.toml
   MAX_SEQ_LEN           Default: 1024
   BATCH_SIZE            Default: 2
   GRAD_ACCUM            Default: 1
@@ -36,12 +38,18 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON_BIN:-$REPO_DIR/.venv/bin/python}"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  PYTHON_BIN="python3"
+fi
 EXPERIMENT="${EXPERIMENT:-mera_sft_test}"
 OUTPUT_DIR="${OUTPUT_DIR:-$REPO_DIR/outputs/runs/$EXPERIMENT/sft-test}"
 MANIFEST_PATH="${MANIFEST_PATH:-$REPO_DIR/outputs/runs/$EXPERIMENT/manifest.json}"
+MODEL="${MODEL:-Qwen/Qwen3-0.6B}"
 TASKS="${TASKS:-chegeka mathlogicqa rcb}"
 LIMIT="${LIMIT:-16}"
 MAX_STEPS="${MAX_STEPS:-8}"
+SFT_CONFIG="${SFT_CONFIG:-$REPO_DIR/configs/sft/mera-smoke-no-lora.toml}"
 MAX_SEQ_LEN="${MAX_SEQ_LEN:-1024}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 GRAD_ACCUM="${GRAD_ACCUM:-1}"
@@ -50,11 +58,12 @@ WANDB_PROJECT="${WANDB_PROJECT:-mera}"
 WANDB_RUN_NAME="${WANDB_RUN_NAME:-sft-test-$EXPERIMENT}"
 
 CMD=(
-  python3 "$REPO_DIR/scripts/run_sft_local.py"
-  --config "$REPO_DIR/configs/sft/mera-smoke.toml"
+  "$PYTHON_BIN" "$REPO_DIR/scripts/run_sft_local.py"
+  --config "$SFT_CONFIG"
   --output-dir "$OUTPUT_DIR"
   --manifest "$MANIFEST_PATH"
   --experiment "$EXPERIMENT"
+  --model "$MODEL"
   --tasks
 )
 
@@ -69,6 +78,7 @@ CMD+=(
   --batch-size "$BATCH_SIZE"
   --grad-accum "$GRAD_ACCUM"
   --micro-batch-size "$MICRO_BATCH_SIZE"
+  --no-lora
   --wandb-project "$WANDB_PROJECT"
   --wandb-run-name "$WANDB_RUN_NAME"
 )

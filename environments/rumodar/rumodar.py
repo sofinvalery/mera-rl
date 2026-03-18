@@ -55,10 +55,10 @@ def _build_dataset(split: str, cache_dir: Optional[str] = None) -> Dataset:
 
 
 def _extract_number(text: str) -> str:
-    match = re.search(r"[-+]?\d+(?:[\.,]\d+)?", text.replace(" ", ""))
-    if not match:
+    matches = re.findall(r"[-+]?\d+(?:[\.,]\d+)?", text.replace(" ", ""))
+    if not matches:
         return ""
-    return match.group(0).replace(",", ".")
+    return matches[-1].replace(",", ".")
 
 
 def _normalize_numeric(value: Any) -> str:
@@ -85,10 +85,10 @@ def load_environment(
 
     parser = vf.MaybeThinkParser(_extract_number)
 
-    def reward_fn(parser_obj: vf.Parser, completion: vf.Messages, answer: Any, **_kw: Any) -> float:
+    def reward_fn(parser: vf.Parser, completion: vf.Messages, answer: Any, **_kw: Any) -> float:
         if answer is None or (isinstance(answer, str) and not answer.strip()):
             return 0.0
-        pred = parser_obj.parse_answer(completion) or ""
+        pred = parser.parse_answer(completion) or ""
         if not pred:
             return 0.0
         return 1.0 if _normalize_numeric(pred) == _normalize_numeric(answer) else 0.0

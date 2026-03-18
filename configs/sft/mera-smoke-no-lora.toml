@@ -1,0 +1,47 @@
+max_steps = 8
+
+[ckpt]
+interval = 4
+
+[ckpt.weights]
+save_sharded = true
+save_format = "safetensors"
+save_adapter_separately = false
+
+[model]
+name = "Qwen/Qwen3-4B-Instruct-2507"
+seq_len = 1024
+trust_remote_code = true
+optimization_dtype = "bfloat16"
+reduce_dtype = "bfloat16"
+
+[data]
+type = "sft"
+name = "__MERASFT_DATASET__"
+seq_len = 1024
+batch_size = 4
+micro-batch-size = 1
+pack_function = "cat"
+shuffle = true
+seed = 42
+
+[data.loss_mask]
+system = false
+user = false
+assistant = true
+tool = false
+
+[optim]
+type = "adamw"
+lr = 1e-5
+weight_decay = 0.0
+max_norm = 1.0
+
+[scheduler]
+type = "cosine"
+warmup_steps = 1
+min_lr = 0.0
+
+[log]
+level = "info"
+file = true

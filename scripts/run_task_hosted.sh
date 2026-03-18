@@ -7,7 +7,6 @@ Usage: scripts/run_task_hosted.sh <task> [owner] [prime-rl-run-args...]
 
 Examples:
   scripts/run_task_hosted.sh mathlogicqa my-team
-  scripts/run_task_hosted.sh rucodeeval my-team --skip-action-check
   PRIME_ENV_OWNER=my-team scripts/run_task_hosted.sh lcs
 
 Environment overrides:
@@ -16,7 +15,6 @@ Environment overrides:
   CHECKPOINT_ID, CHECKPOINT_INTERVAL, CHECKPOINT_KEEP_CLOUD
   EVAL_INTERVAL, EVAL_NUM_EXAMPLES, EVAL_ROLLOUTS_PER_EXAMPLE, EVAL_BASE_MODEL=1
   RUN_NAME, WANDB_PROJECT, WANDB_ENTITY, WANDB_NAME
-  ALLOW_NONFAIR=1   # required for tasks with non-fair split (e.g. rucodeeval)
 EOF
 }
 
@@ -51,9 +49,6 @@ RENDER_ARGS=(
   --output "$CONFIG_PATH"
 )
 
-if [[ "${ALLOW_NONFAIR:-0}" == "1" ]]; then
-  RENDER_ARGS+=(--allow-nonfair)
-fi
 if [[ -n "${MODEL:-}" ]]; then
   RENDER_ARGS+=(--model "$MODEL")
 fi

@@ -7,8 +7,6 @@ MERA workspace for:
 - Prime-eval-driven baseline/intermediate/final evaluation stages
 - Hugging Face publication for SFT and RL artifacts
 
-The repo keeps the hosted-RL migration work that already existed, and adds the missing SFT/eval/artifact pipeline around it.
-
 ## Design
 
 The SFT path now follows the upstream `prime-rl` example style from `reverse_text` and `wordle`:
@@ -93,7 +91,7 @@ Notes:
 The checked-in SFT template is:
 
 ```bash
-configs/sft/mera-fair.toml
+configs/sft/mera-fair-no-lora.toml
 ```
 
 The local launcher builds a MERA JSONL dataset and then runs the official Prime-RL `sft @ <config>` flow with overrides:
@@ -113,7 +111,7 @@ Key defaults:
 
 - base model: `Qwen/Qwen3-4B-Instruct-2507`
 - fair SFT tasks: `chegeka lcs mamuramu mathlogicqa multiq parus rcb rumodar rumultiar ruopenbookqa rutie ruworldtree rwsd use`
-- LoRA enabled by default
+- LoRA disabled by default (`--no-lora`)
 - sequence length: `1536`
 - micro batch size: `1`
 - effective batch semantics equivalent to the previous `4 x 2 GPUs x grad_accum 2`
@@ -124,17 +122,69 @@ Dataset-only preprocessing is also exposed directly:
 python3 scripts/build_sft_dataset.py \
   --output-dir outputs/runs/mera_01/sft \
   --manifest outputs/runs/mera_01/manifest.json \
-  --experiment mera_01
+  --experiment mera_01 \
+  --max-seq-len 1536 \
+  --drop-overlength \
+  --rutie-context-mode single_turn
 ```
+
+The dataset builder now writes preprocessing telemetry (`raw_rows`, `kept_rows`, `dropped_empty`, `dropped_overlength`, prompt token percentiles, and zero-trainable estimates) to `dataset/manifest.json` and the pipeline manifest.
+
+Audit trainability before launching SFT:
+
+```bash
+python3 scripts/audit_sft_dataset.py \
+  --dataset-dir outputs/runs/mera_01/sft/dataset \
+  --model Qwen/Qwen3-4B-Instruct-2507 \
+  --max-seq-len 1536
+```
+
+To correct MFU reporting on GPUs that prime-rl does not calibrate (for example RTX 5090), set:
+
+```bash
+export MERA_GPU_PEAK_TFLOPS=<your_gpu_peak_tflops>
+```
+
+or pass `--gpu-peak-tflops` to `run_sft_local.py`.
 
 After training, the launcher resolves the latest stable checkpoint and writes:
 
 - `outputs/.../latest`
 - `outputs/.../LATEST_WEIGHT_STEP`
 
-If `--hf-adapter-repo-id` is set, it automatically uploads the final adapter after SFT.
+It also emits parsed step metrics (throughput, step time, raw MFU, corrected MFU when peak TFLOPS is set). You can rerun this summary manually:
 
-If `--hf-merged-repo-id` is set, it also produces and uploads a merged full-model handoff artifact for hosted RL warm-start.
+```bash
+python3 scripts/report_sft_metrics.py \
+  --output-dir outputs/runs/mera_01/sft \
+  --gpu-peak-tflops <your_gpu_peak_tflops>
+```
+
+Throughput tuning ladder (run each for ~100 steady-state steps and compare with `report_sft_metrics.py`):
+
+```bash
+# baseline
+python3 scripts/run_sft_local.py ... --max-steps 120
+
+# rung 1
+python3 scripts/run_sft_local.py ... --max-steps 120 --loss-impl liger_fused
+
+# rung 2
+python3 scripts/run_sft_local.py ... --max-steps 120 --loss-impl liger_fused --model.compile.fullgraph true
+
+# optional high-risk rung (memory)
+python3 scripts/run_sft_local.py ... --max-steps 120 --model.reshard-after-forward false
+```
+
+If `--hf-adapter-repo-id` is set, it uploads:
+
+- adapter artifact when `--use-lora` is enabled
+- checkpoint artifact when `--no-lora` is used
+
+If `--hf-merged-repo-id` is set, it uploads:
+
+- merged model when `--use-lora` is enabled
+- checkpoint artifact when `--no-lora` is used
 
 ### Tiny SFT Smoke Test
 
@@ -146,15 +196,18 @@ scripts/run_sft_test.sh
 
 Default smoke settings:
 
+- model: `Qwen/Qwen3-0.6B`
 - tasks: `chegeka mathlogicqa rcb`
 - per-task limit: `16`
 - max steps: `8`
 - sequence length: `1024`
+- config: `configs/sft/mera-smoke-no-lora.toml`
 
 Useful overrides:
 
 ```bash
 LIMIT=8 MAX_STEPS=4 scripts/run_sft_test.sh
+MODEL=Qwen/Qwen3-1.7B LIMIT=8 MAX_STEPS=4 scripts/run_sft_test.sh
 TASKS="chegeka rcb" scripts/run_sft_test.sh --dry-run
 HF_ADAPTER_REPO_ID=<user-or-org>/mera-qwen3-4b-sft-test scripts/run_sft_test.sh
 ```
@@ -231,7 +284,7 @@ Or launch the whole fair set:
 MODEL=<hf-model-or-handoff-model> \
 WANDB_PROJECT=mera \
 WANDB_ENTITY=<wandb-entity> \
-scripts/run_all_hosted.sh fair <owner>
+scripts/run_all_hosted.sh <owner>
 ```
 
 ## Hugging Face Publication

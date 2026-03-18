@@ -55,8 +55,8 @@ def _build_dataset(split: str, cache_dir: Optional[str] = None) -> Dataset:
 
 
 def _extract_12(text: str) -> str:
-    match = re.search(r"\b([12])\b", text.strip())
-    return match.group(1) if match else ""
+    matches = re.findall(r"\b([12])\b", text.strip())
+    return matches[-1] if matches else ""
 
 
 def _normalize_binary(value: Any) -> str:
@@ -77,10 +77,10 @@ def load_environment(
 
     parser = vf.MaybeThinkParser(_extract_12)
 
-    def reward_fn(parser_obj: vf.Parser, completion: vf.Messages, answer: Any, **_kw: Any) -> float:
+    def reward_fn(parser: vf.Parser, completion: vf.Messages, answer: Any, **_kw: Any) -> float:
         if answer is None or (isinstance(answer, str) and not answer.strip()):
             return 0.0
-        pred = parser_obj.parse_answer(completion) or ""
+        pred = parser.parse_answer(completion) or ""
         if not pred:
             return 0.0
         return 1.0 if _normalize_binary(pred) == _normalize_binary(answer) else 0.0

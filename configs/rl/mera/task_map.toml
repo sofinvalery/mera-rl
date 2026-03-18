@@ -8,9 +8,6 @@ default_lora_alpha = 32
 default_checkpoint_interval = 100
 default_checkpoint_keep_cloud = 5
 
-[task.bps]
-split = "train"
-
 [task.chegeka]
 split = "train"
 
@@ -32,15 +29,6 @@ split = "train"
 [task.rcb]
 split = "train"
 
-[task.rucodeeval]
-split = "test"
-
-[task.rudetox]
-split = "train"
-
-[task.rummlu]
-split = "train"
-
 [task.rumodar]
 split = "public_test"
 
@@ -57,9 +45,6 @@ split = "train"
 split = "train"
 
 [task.rwsd]
-split = "train"
-
-[task.simplear]
 split = "train"
 
 [task.use]
