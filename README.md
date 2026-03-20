@@ -248,6 +248,46 @@ Each stage writes:
 - `outputs/runs/<experiment>/evaluations/<stage>/summary.json`
 - `outputs/runs/<experiment>/evaluations/<stage>/comparison.json`
 
+## Self-Hosted RLVR (prime-rl, 2x5090)
+
+This repo now includes a local RLVR path on top of your SFT model:
+
+- SFT base model for RL: `sofinvalery/mera-qwen3-4b-sft`
+- GPU layout: inference on GPU `0`, trainer on GPU `1`
+- Storage mode: ZMQ rollout transport (no rollout files on disk)
+- Checkpoints: sparse (`interval=400`, `keep_last=1`) to stay storage-light
+
+Set env once:
+
+```bash
+export PRIME_RL_ENTRY=/root/prime-rl/.venv/bin/rl   # optional if `rl` already on PATH
+export WANDB_API_KEY=...
+export WANDB_PROJECT=mera
+export WANDB_ENTITY=sofinvalery
+export HF_TOKEN=...
+export HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
+export HF_RL_REPO_ID=sofinvalery/mera-qwen3-4b-rlvr
+```
+
+Run smoke RLVR (small run for pipeline verification):
+
+```bash
+EXPERIMENT=mera_rlvr_smoke scripts/run_rlvr_smoke.sh
+```
+
+Run main RLVR (800 steps) and auto-push final checkpoint to HF:
+
+```bash
+python3 scripts/run_rlvr_local.py train --experiment mera_rlvr_main
+```
+
+Dry-run command rendering:
+
+```bash
+python3 scripts/run_rlvr_local.py smoke --experiment mera_rlvr_smoke --dry-run
+python3 scripts/run_rlvr_local.py train --experiment mera_rlvr_main --dry-run
+```
+
 ## Hosted RL
 
 The hosted RL generator now supports:

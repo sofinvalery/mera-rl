@@ -270,3 +270,21 @@ def test_report_sft_metrics_script(tmp_path: Path) -> None:
     result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, capture_output=True, text=True)
     assert "mfu_raw_pct_median=5.250" in result.stdout
     assert "mfu_corrected_pct_median=" in result.stdout
+
+
+def test_run_rlvr_local_smoke_dry_run() -> None:
+    experiment = "test_rlvr_smoke"
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "run_rlvr_local.py"),
+        "smoke",
+        "--experiment",
+        experiment,
+        "--dry-run",
+    ]
+    env = os.environ.copy()
+    env["PRIME_RL_ENTRY"] = "/bin/echo"
+    result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
+    assert "mode=smoke" in result.stdout
+    config_path = REPO_ROOT / "outputs" / "runs" / experiment / "configs" / "rlvr_smoke.toml"
+    assert config_path.exists()

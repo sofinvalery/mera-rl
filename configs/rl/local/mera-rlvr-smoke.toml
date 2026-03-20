@@ -1,0 +1,68 @@
+max_steps = 5
+seq_len = 1024
+max_async_level = 1
+clean = true
+
+[model]
+name = "sofinvalery/mera-qwen3-4b-sft"
+
+inference_gpu_ids = [0]
+trainer_gpu_ids = [1]
+
+[wandb]
+project = "mera"
+
+[ckpt]
+interval = 1000
+keep_last = 1
+
+[inference]
+enable_lora = true
+max_lora_rank = 16
+gpu_memory_utilization = 0.90
+
+[inference.model]
+dtype = "bfloat16"
+max_model_len = 1536
+trust_remote_code = true
+
+[trainer.model]
+optimization_dtype = "bfloat16"
+reduce_dtype = "bfloat16"
+lora = { rank = 16, alpha = 32.0, dropout = 0.0, target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"] }
+
+[trainer.optim]
+lr = 1e-6
+weight_decay = 0.0
+
+[orchestrator]
+batch_size = 16
+rollouts_per_example = 4
+oversampling_factor = 1.0
+
+[orchestrator.sampling]
+temperature = 1.0
+max_tokens = 96
+min_tokens = 0
+repetition_penalty = 1.0
+
+[orchestrator.buffer]
+online_difficulty_filtering = false
+
+[orchestrator.rollout_transport]
+type = "zmq"
+
+[trainer.rollout_transport]
+type = "zmq"
+
+[[orchestrator.env]]
+id = "mathlogicqa"
+args = { split = "train" }
+
+[[orchestrator.env]]
+id = "rcb"
+args = { split = "train" }
+
+[[orchestrator.env]]
+id = "rwsd"
+args = { split = "train" }
