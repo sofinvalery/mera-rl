@@ -286,5 +286,46 @@ def test_run_rlvr_local_smoke_dry_run() -> None:
     env["PRIME_RL_ENTRY"] = "/bin/echo"
     result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
     assert "mode=smoke" in result.stdout
+    assert "command=/bin/echo @" in result.stdout
+    assert "--wandb." not in result.stdout
     config_path = REPO_ROOT / "outputs" / "runs" / experiment / "configs" / "rlvr_smoke.toml"
     assert config_path.exists()
+
+
+def test_run_rlvr_local_train_dry_run_without_wandb_flags() -> None:
+    experiment = "test_rlvr_train"
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "run_rlvr_local.py"),
+        "train",
+        "--experiment",
+        experiment,
+        "--dry-run",
+    ]
+    env = os.environ.copy()
+    env["PRIME_RL_ENTRY"] = "/bin/echo"
+    result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
+    assert "mode=train" in result.stdout
+    assert "command=/bin/echo @" in result.stdout
+    assert "--wandb." not in result.stdout
+    config_path = REPO_ROOT / "outputs" / "runs" / experiment / "configs" / "rlvr_train.toml"
+    assert config_path.exists()
+
+
+def test_run_rlvr_local_train_dry_run_with_wandb_entity_env() -> None:
+    experiment = "test_rlvr_train_with_entity"
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "run_rlvr_local.py"),
+        "train",
+        "--experiment",
+        experiment,
+        "--dry-run",
+    ]
+    env = os.environ.copy()
+    env["PRIME_RL_ENTRY"] = "/bin/echo"
+    env["WANDB_ENTITY"] = "sofinvalery"
+    result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
+    assert "mode=train" in result.stdout
+    assert "--wandb.entity" not in result.stdout
+    assert "--wandb." not in result.stdout

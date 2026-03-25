@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import string
 from typing import Any, Dict, Optional
@@ -45,10 +46,12 @@ def _build_dataset(split: str, cache_dir: Optional[str] = None) -> Dataset:
     def to_example(x: Dict[str, Any]) -> Dict[str, Any]:
         question = format_prompt(x["instruction"], x["inputs"], context="")
         return {
-            "question": question,
-            "answer": x.get("outputs", ""),
-            "meta": x.get("meta", {}),
-            "inputs": x.get("inputs", {}),
+            "prompt": [{"role": "user", "content": question}],
+            "answer": str(x.get("outputs", "")),
+            "info": json.dumps(
+                {"inputs": x.get("inputs", {}), "meta": x.get("meta", {})},
+                ensure_ascii=False,
+            ),
         }
 
     return raw.map(to_example, remove_columns=raw.column_names)
@@ -122,7 +125,7 @@ def load_environment(
         parser: vf.Parser,
         completion: vf.Messages,
         answer: Any,
-        state: vf.State,
+        info: Any,
         **_kw: Any,
     ) -> float:
         if answer is None or (isinstance(answer, str) and not answer.strip()):
@@ -131,7 +134,19 @@ def load_environment(
         pred = parse_use_answer(pred_raw)
         if not pred:
             return 0.0
-        meta = state.get("input", {}).get("meta", {}) if isinstance(state.get("input"), dict) else {}
+        info_obj: Dict[str, Any]
+        if isinstance(info, str):
+            try:
+                parsed_info = json.loads(info)
+            except json.JSONDecodeError:
+                parsed_info = {}
+            info_obj = parsed_info if isinstance(parsed_info, dict) else {}
+        elif isinstance(info, dict):
+            info_obj = info
+        else:
+            info_obj = {}
+        raw_meta = info_obj.get("meta", {})
+        meta = raw_meta if isinstance(raw_meta, dict) else {}
         score = use_example_score(
             str(answer),
             pred,

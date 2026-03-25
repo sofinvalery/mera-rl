@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import string
 from typing import Any, Dict, Optional
@@ -45,10 +46,12 @@ def _build_dataset(split: str, cache_dir: Optional[str] = None) -> Dataset:
     def to_example(x: Dict[str, Any]) -> Dict[str, Any]:
         question = format_prompt(x["instruction"], x["inputs"], context="")
         return {
-            "question": question,
-            "answer": x.get("outputs", ""),
-            "meta": x.get("meta", {}),
-            "inputs": x.get("inputs", {}),
+            "prompt": [{"role": "user", "content": question}],
+            "answer": str(x.get("outputs", "")),
+            "info": json.dumps(
+                {"inputs": x.get("inputs", {}), "meta": x.get("meta", {})},
+                ensure_ascii=False,
+            ),
         }
 
     return raw.map(to_example, remove_columns=raw.column_names)

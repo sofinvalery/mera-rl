@@ -53,12 +53,6 @@ def main() -> None:
     if not args.dry_run:
         assert Path(rl_entry).exists() or rl_entry == "rl", rl_entry
 
-    wandb_project = os.getenv("WANDB_PROJECT", "mera")
-    wandb_entity = os.getenv("WANDB_ENTITY")
-    if mode == "train" and not args.dry_run:
-        assert os.getenv("WANDB_API_KEY"), "WANDB_API_KEY is required for train mode."
-        assert wandb_entity, "WANDB_ENTITY is required for train mode."
-
     config_copy_path.write_text(template_path.read_text(encoding="utf-8"), encoding="utf-8")
     ensure_manifest(manifest_path, experiment=args.experiment, base_model=SFT_MODEL)
 
@@ -68,15 +62,7 @@ def main() -> None:
         str(config_copy_path),
         "--output-dir",
         str(output_dir),
-        "--wandb.project",
-        wandb_project,
-        "--wandb.name",
-        f"{args.experiment}-{mode}-rlvr",
     ]
-    if wandb_entity:
-        cmd.extend(["--wandb.entity", wandb_entity])
-    if mode == "smoke":
-        cmd.extend(["--wandb.offline", "true"])
 
     print(f"mode={mode}")
     print(f"experiment={args.experiment}")
@@ -89,6 +75,14 @@ def main() -> None:
 
     env = os.environ.copy()
     env["PRIME_DISABLE_VERSION_CHECK"] = "1"
+    if "UV_PROJECT" not in env:
+        resolved_rl_entry = rl_entry if rl_entry != "rl" else (shutil.which("rl") or rl_entry)
+        rl_path = Path(resolved_rl_entry)
+        if rl_path.is_absolute():
+            # prime-rl launcher uses nested `uv run ...`; pin uv project to the rl installation root.
+            uv_project = rl_path.resolve().parents[2]
+            if (uv_project / "pyproject.toml").exists():
+                env["UV_PROJECT"] = str(uv_project)
     subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env)
 
     if mode == "smoke":

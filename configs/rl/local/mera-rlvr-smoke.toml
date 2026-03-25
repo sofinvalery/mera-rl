@@ -1,16 +1,19 @@
 max_steps = 5
 seq_len = 1024
 max_async_level = 1
-clean = true
+clean_output_dir = true
+
+[deployment]
+num_infer_gpus = 1
+num_train_gpus = 1
 
 [model]
 name = "sofinvalery/mera-qwen3-4b-sft"
 
-inference_gpu_ids = [0]
-trainer_gpu_ids = [1]
-
 [wandb]
 project = "mera"
+shared = false
+offline = true
 
 [ckpt]
 interval = 1000
@@ -30,6 +33,10 @@ trust_remote_code = true
 optimization_dtype = "bfloat16"
 reduce_dtype = "bfloat16"
 lora = { rank = 16, alpha = 32.0, dropout = 0.0, target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"] }
+
+[trainer.tokenizer]
+name = "sofinvalery/mera-qwen3-4b-sft"
+trust_remote_code = true
 
 [trainer.optim]
 lr = 1e-6

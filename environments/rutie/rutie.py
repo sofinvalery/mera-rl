@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import string
 from typing import Any, Dict, List, Optional
@@ -67,12 +68,32 @@ def _first_prompt_messages(prompt: str, system_prompt: Optional[str] = None) -> 
 
 class RuTiEEnv(vf.MultiTurnEnv):
     def __init__(self, dialogs: List[List[Dict[str, Any]]], system_prompt: str | None = None, **kwargs):
-        ds = Dataset.from_list([{"prompt": [], "info": {"dialog": dialog}} for dialog in dialogs])
+        rows = []
+        for dialog in dialogs:
+            first_prompt = ""
+            if dialog:
+                first_prompt = format_prompt(dialog[0]["instruction"], dialog[0]["inputs"], context="")
+            rows.append(
+                {
+                    "prompt": [{"role": "user", "content": first_prompt}],
+                    "answer": "",
+                    "info": json.dumps({"dialog": dialog}, ensure_ascii=False),
+                }
+            )
+        ds = Dataset.from_list(rows)
         super().__init__(dataset=ds, eval_dataset=ds, system_prompt=system_prompt, **kwargs)
         self._parser = vf.MaybeThinkParser(_extract_12)
 
     async def setup_state(self, state: vf.State, **_kwargs: Any) -> vf.State:
         info_obj = state.get("info", {})
+        if isinstance(info_obj, str):
+            try:
+                parsed_info = json.loads(info_obj)
+            except json.JSONDecodeError:
+                parsed_info = {}
+            info_obj = parsed_info if isinstance(parsed_info, dict) else {}
+        if not isinstance(info_obj, dict):
+            info_obj = {}
         dialog_val = info_obj.get("dialog") if isinstance(info_obj, dict) else None
         dialog = dialog_val if isinstance(dialog_val, list) else []
         state["dialog"] = dialog
