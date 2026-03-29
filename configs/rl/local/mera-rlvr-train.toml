@@ -1,6 +1,6 @@
 max_steps = 800
 seq_len = 2048
-max_async_level = 4
+max_async_level = 6
 clean_output_dir = true
 
 [deployment]
@@ -14,20 +14,22 @@ name = "sofinvalery/mera-qwen3-4b-sft"
 project = "mera"
 
 [ckpt]
-interval = 400
 keep_last = 1
 
 [inference]
 enable_lora = true
 max_lora_rank = 16
-gpu_memory_utilization = 0.95
+gpu_memory_utilization = 0.85
 
 [inference.vllm_extra]
 tokenizer = "Qwen/Qwen3-4B-Instruct-2507"
+max_num_seqs = 32
+max_num_batched_tokens = 12288
+swap_space = 8
 
 [inference.model]
 dtype = "bfloat16"
-max_model_len = 2048
+max_model_len = 4096
 trust_remote_code = true
 
 [trainer.model]
@@ -43,12 +45,12 @@ name = "Qwen/Qwen3-4B-Instruct-2507"
 trust_remote_code = true
 
 [trainer.optim]
-lr = 1e-6
+lr = 5e-6
 weight_decay = 0.0
 
 [orchestrator]
-token_batch_size = 131072
-max_inflight_rollouts = 256
+token_batch_size = 98304
+max_inflight_rollouts = 144
 rollouts_per_example = 8
 
 [orchestrator.sampling]

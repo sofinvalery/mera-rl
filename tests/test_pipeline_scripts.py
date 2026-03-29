@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -288,8 +289,13 @@ def test_run_rlvr_local_smoke_dry_run() -> None:
     assert "mode=smoke" in result.stdout
     assert "command=/bin/echo @" in result.stdout
     assert "--wandb." not in result.stdout
+    assert "wandb_mode_effective=disabled" in result.stdout
     config_path = REPO_ROOT / "outputs" / "runs" / experiment / "configs" / "rlvr_smoke.toml"
     assert config_path.exists()
+    config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert "wandb" not in config
+    env_ids = [entry["id"] for entry in config["orchestrator"]["env"]]
+    assert len(env_ids) == 14
 
 
 def test_run_rlvr_local_train_dry_run_without_wandb_flags() -> None:
@@ -308,12 +314,16 @@ def test_run_rlvr_local_train_dry_run_without_wandb_flags() -> None:
     assert "mode=train" in result.stdout
     assert "command=/bin/echo @" in result.stdout
     assert "--wandb." not in result.stdout
+    assert "wandb_mode_effective=offline" in result.stdout
     config_path = REPO_ROOT / "outputs" / "runs" / experiment / "configs" / "rlvr_train.toml"
     assert config_path.exists()
+    config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert config["wandb"]["offline"] is True
+    assert config["wandb"]["shared"] is False
 
 
-def test_run_rlvr_local_train_dry_run_with_wandb_entity_env() -> None:
-    experiment = "test_rlvr_train_with_entity"
+def test_run_rlvr_local_train_dry_run_with_online_mode_override() -> None:
+    experiment = "test_rlvr_train_online_override"
     cmd = [
         sys.executable,
         str(REPO_ROOT / "scripts" / "run_rlvr_local.py"),
@@ -324,8 +334,33 @@ def test_run_rlvr_local_train_dry_run_with_wandb_entity_env() -> None:
     ]
     env = os.environ.copy()
     env["PRIME_RL_ENTRY"] = "/bin/echo"
-    env["WANDB_ENTITY"] = "sofinvalery"
+    env["MERA_RLVR_WANDB_MODE"] = "online"
     result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
     assert "mode=train" in result.stdout
-    assert "--wandb.entity" not in result.stdout
+    assert "wandb_mode_requested=online" in result.stdout
+    assert "wandb_mode_effective=online" in result.stdout
     assert "--wandb." not in result.stdout
+    config_path = REPO_ROOT / "outputs" / "runs" / experiment / "configs" / "rlvr_train.toml"
+    config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert config["wandb"]["offline"] is False
+
+
+def test_run_rlvr_local_smoke_dry_run_model_dir_injection(tmp_path: Path) -> None:
+    experiment = "test_rlvr_smoke_model_dir"
+    model_dir = tmp_path / "cached-model"
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "run_rlvr_local.py"),
+        "smoke",
+        "--experiment",
+        experiment,
+        "--dry-run",
+    ]
+    env = os.environ.copy()
+    env["PRIME_RL_ENTRY"] = "/bin/echo"
+    env["MERA_RLVR_MODEL_DIR"] = str(model_dir)
+    result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
+    assert "model_source=dry_run_not_downloaded" in result.stdout
+    config_path = REPO_ROOT / "outputs" / "runs" / experiment / "configs" / "rlvr_smoke.toml"
+    config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert config["model"]["name"] == str(model_dir.resolve())

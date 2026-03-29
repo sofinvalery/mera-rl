@@ -1,6 +1,6 @@
-max_steps = 5
-seq_len = 1024
-max_async_level = 1
+max_steps = 28
+seq_len = 1536
+max_async_level = 2
 clean_output_dir = true
 
 [deployment]
@@ -10,26 +10,23 @@ num_train_gpus = 1
 [model]
 name = "sofinvalery/mera-qwen3-4b-sft"
 
-[wandb]
-project = "mera"
-shared = false
-offline = true
-
 [ckpt]
-interval = 1000
 keep_last = 1
 
 [inference]
 enable_lora = true
 max_lora_rank = 16
-gpu_memory_utilization = 0.90
+gpu_memory_utilization = 0.85
 
 [inference.vllm_extra]
 tokenizer = "Qwen/Qwen3-4B-Instruct-2507"
+max_num_seqs = 28
+max_num_batched_tokens = 10240
+swap_space = 8
 
 [inference.model]
 dtype = "bfloat16"
-max_model_len = 1536
+max_model_len = 4096
 trust_remote_code = true
 
 [trainer.model]
@@ -46,13 +43,14 @@ lr = 1e-6
 weight_decay = 0.0
 
 [orchestrator]
-batch_size = 16
-rollouts_per_example = 4
+batch_size = 8
+rollouts_per_example = 1
 oversampling_factor = 1.0
+max_inflight_rollouts = 48
 
 [orchestrator.sampling]
 temperature = 1.0
-max_tokens = 96
+max_tokens = 128
 min_tokens = 0
 repetition_penalty = 1.0
 
@@ -66,7 +64,27 @@ type = "zmq"
 type = "zmq"
 
 [[orchestrator.env]]
+id = "chegeka"
+args = { split = "train" }
+
+[[orchestrator.env]]
+id = "lcs"
+args = { split = "public_test" }
+
+[[orchestrator.env]]
+id = "mamuramu"
+args = { split = "train" }
+
+[[orchestrator.env]]
 id = "mathlogicqa"
+args = { split = "train" }
+
+[[orchestrator.env]]
+id = "multiq"
+args = { split = "train" }
+
+[[orchestrator.env]]
+id = "parus"
 args = { split = "train" }
 
 [[orchestrator.env]]
@@ -74,5 +92,29 @@ id = "rcb"
 args = { split = "train" }
 
 [[orchestrator.env]]
+id = "rumodar"
+args = { split = "public_test" }
+
+[[orchestrator.env]]
+id = "rumultiar"
+args = { split = "train" }
+
+[[orchestrator.env]]
+id = "ruopenbookqa"
+args = { split = "train" }
+
+[[orchestrator.env]]
+id = "rutie"
+args = { split = "train" }
+
+[[orchestrator.env]]
+id = "ruworldtree"
+args = { split = "train" }
+
+[[orchestrator.env]]
 id = "rwsd"
+args = { split = "train" }
+
+[[orchestrator.env]]
+id = "use"
 args = { split = "train" }

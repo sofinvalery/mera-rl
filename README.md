@@ -261,14 +261,15 @@ Set env once:
 
 ```bash
 export PRIME_RL_ENTRY=/root/prime-rl/.venv/bin/rl   # optional if `rl` already on PATH
-export WANDB_API_KEY=...
-export WANDB_ENTITY=sofinvalery   # optional; consumed by W&B SDK env handling
+export MERA_RLVR_WANDB_MODE=offline   # default launcher mode; avoids W&B startup failures
+export MERA_RLVR_MODEL_DIR=/workspace/models/mera-qwen3-4b-sft
+export MERA_RLVR_PREPULL_MODEL=1
 export HF_TOKEN=...
 export HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
 export HF_RL_REPO_ID=sofinvalery/mera-qwen3-4b-rlvr
 ```
 
-Run smoke RLVR (small run for pipeline verification):
+Run smoke RLVR (full 14-env pipeline verification; no W&B, no HF publish):
 
 ```bash
 EXPERIMENT=mera_rlvr_smoke scripts/run_rlvr_smoke.sh
@@ -290,8 +291,9 @@ python3 scripts/run_rlvr_local.py train --experiment mera_rlvr_main --dry-run
 Notes:
 
 - Local RLVR launcher no longer passes `--wandb.*` CLI overrides.
-- RLVR W&B project/name/offline behavior is configured in `configs/rl/local/mera-rlvr-*.toml`.
-- W&B credentials/session are still read from your environment (for example `WANDB_API_KEY`, optional `WANDB_ENTITY`).
+- RLVR launcher rewrites copied run configs per `MERA_RLVR_WANDB_MODE` (`offline` by default).
+- Set `MERA_RLVR_WANDB_MODE=online` only when W&B connectivity is confirmed.
+- Launcher can pre-pull and pin model weights to `MERA_RLVR_MODEL_DIR` so repeated runs avoid refetching.
 
 ## Hosted RL
 
