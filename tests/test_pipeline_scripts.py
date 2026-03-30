@@ -364,3 +364,95 @@ def test_run_rlvr_local_smoke_dry_run_model_dir_injection(tmp_path: Path) -> Non
     config_path = REPO_ROOT / "outputs" / "runs" / experiment / "configs" / "rlvr_smoke.toml"
     config = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert config["model"]["name"] == str(model_dir.resolve())
+
+
+def test_run_rlvr_local_sequential_train_dry_run_template_order_and_handoff() -> None:
+    experiment = "test_rlvr_seq_train"
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "run_rlvr_local_sequential.py"),
+        "train",
+        "--experiment",
+        experiment,
+        "--dry-run",
+        "--tasks",
+        "lcs",
+        "chegeka",
+    ]
+    env = os.environ.copy()
+    env["PRIME_RL_ENTRY"] = "/bin/echo"
+    result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
+    assert "task_order=chegeka,lcs" in result.stdout
+    assert result.stdout.index("task=chegeka") < result.stdout.index("task=lcs")
+
+    run_root = REPO_ROOT / "outputs" / "runs" / experiment
+    config_1_path = run_root / "configs" / "sequential" / "rlvr_train_01_chegeka.toml"
+    config_2_path = run_root / "configs" / "sequential" / "rlvr_train_02_lcs.toml"
+    assert config_1_path.exists()
+    assert config_2_path.exists()
+
+    config_1 = tomllib.loads(config_1_path.read_text(encoding="utf-8"))
+    config_2 = tomllib.loads(config_2_path.read_text(encoding="utf-8"))
+    assert config_1["max_steps"] == 100
+    assert config_2["max_steps"] == 100
+    assert len(config_1["orchestrator"]["env"]) == 1
+    assert len(config_2["orchestrator"]["env"]) == 1
+    assert config_1["orchestrator"]["env"][0]["id"] == "chegeka"
+    assert config_2["orchestrator"]["env"][0]["id"] == "lcs"
+
+    expected_handoff = run_root / "rlvr_sequential" / "01_chegeka" / "weights" / "step_100"
+    assert config_2["model"]["name"] == str(expected_handoff)
+
+
+def test_run_rlvr_local_sequential_smoke_dry_run_single_task() -> None:
+    experiment = "test_rlvr_seq_smoke"
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "run_rlvr_local_sequential.py"),
+        "smoke",
+        "--experiment",
+        experiment,
+        "--dry-run",
+        "--tasks",
+        "chegeka",
+    ]
+    env = os.environ.copy()
+    env["PRIME_RL_ENTRY"] = "/bin/echo"
+    result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
+    assert "wandb_mode_effective=disabled" in result.stdout
+
+    config_path = REPO_ROOT / "outputs" / "runs" / experiment / "configs" / "sequential" / "rlvr_smoke_01_chegeka.toml"
+    assert config_path.exists()
+    config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert config["max_steps"] == 28
+    assert len(config["orchestrator"]["env"]) == 1
+    assert config["orchestrator"]["env"][0]["id"] == "chegeka"
+    assert "wandb" not in config
+
+
+def test_run_rlvr_local_sequential_train_dry_run_resume_from_task() -> None:
+    experiment = "test_rlvr_seq_resume"
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "run_rlvr_local_sequential.py"),
+        "train",
+        "--experiment",
+        experiment,
+        "--dry-run",
+        "--tasks",
+        "chegeka",
+        "lcs",
+        "--resume-from-task",
+        "lcs",
+    ]
+    env = os.environ.copy()
+    env["PRIME_RL_ENTRY"] = "/bin/echo"
+    result = subprocess.run(cmd, check=True, cwd=REPO_ROOT, env=env, capture_output=True, text=True)
+    assert "task=chegeka" not in result.stdout
+    assert "task=lcs" in result.stdout
+
+    run_root = REPO_ROOT / "outputs" / "runs" / experiment
+    config_2_path = run_root / "configs" / "sequential" / "rlvr_train_02_lcs.toml"
+    config_2 = tomllib.loads(config_2_path.read_text(encoding="utf-8"))
+    expected_handoff = run_root / "rlvr_sequential" / "01_chegeka" / "weights" / "step_100"
+    assert config_2["model"]["name"] == str(expected_handoff)

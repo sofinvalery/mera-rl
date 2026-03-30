@@ -281,11 +281,33 @@ Run main RLVR (800 steps) and auto-push final checkpoint to HF:
 python3 scripts/run_rlvr_local.py train --experiment mera_rlvr_main
 ```
 
+Run sequential RLVR (task-by-task, checkpoint chaining, 100 steps per task by default):
+
+```bash
+python3 scripts/run_rlvr_local_sequential.py train --experiment mera_rlvr_seq_main
+```
+
+Shortcut wrapper (same behavior as above):
+
+```bash
+EXPERIMENT=mera_rlvr_seq_main scripts/run_rlvr_sequential.sh
+```
+
+Resume sequential RLVR from a specific task in template order:
+
+```bash
+python3 scripts/run_rlvr_local_sequential.py \
+  train \
+  --experiment mera_rlvr_seq_main \
+  --resume-from-task lcs
+```
+
 Dry-run command rendering:
 
 ```bash
 python3 scripts/run_rlvr_local.py smoke --experiment mera_rlvr_smoke --dry-run
 python3 scripts/run_rlvr_local.py train --experiment mera_rlvr_main --dry-run
+python3 scripts/run_rlvr_local_sequential.py train --experiment mera_rlvr_seq_main --dry-run
 ```
 
 Notes:
@@ -294,6 +316,8 @@ Notes:
 - RLVR launcher rewrites copied run configs per `MERA_RLVR_WANDB_MODE` (`offline` by default).
 - Set `MERA_RLVR_WANDB_MODE=online` only when W&B connectivity is confirmed.
 - Launcher can pre-pull and pin model weights to `MERA_RLVR_MODEL_DIR` so repeated runs avoid refetching.
+- Sequential RLVR stores per-task configs under `outputs/runs/<experiment>/configs/sequential/` and per-task outputs under `outputs/runs/<experiment>/rlvr_sequential/`.
+- Sequential RLVR publishes to HF once at the end of a full successful train run.
 
 ## Hosted RL
 
